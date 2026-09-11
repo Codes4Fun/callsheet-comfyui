@@ -10,6 +10,7 @@ from PIL import Image
 import folder_paths
 
 from .config import STORE_SUBFOLDER, OLD_STORE_SUBFOLDER
+from .binaries import FFMPEG, probe
 
 STORE_DIR = os.path.join(folder_paths.get_output_directory(), STORE_SUBFOLDER)
 MANIFEST = os.path.join(STORE_DIR, "manifest.json")
@@ -52,13 +53,11 @@ def register(key, rec):
 
 
 def variation_key(item, seed, ref_keys=(), audio_ref_keys=(),
-                  cont_key=None, video_refs=(), cont_video=None):
-    """Content-addressed identity of one variation: a hash of the FULL
-    canonical item definition (everything except index) plus resolved
-    dependency keys. video_refs is a sequence of [key, trim_spec] pairs
-    and cont_video a [key, trim_spec] pair — trims change content, so
-    they participate. New fields are included only when present, so keys
-    for items not using them are unchanged."""
+                  cont_key=None, video_refs=(), cont_video=None,
+                  target_key=None, target_video=None):
+    """Content-addressed identity of one variation. New fields are
+    included only when present, so keys for items not using them are
+    unchanged (existing stores stay valid)."""
     definition = {
         "label": item["label"],
         "pipeline": item["pipeline"],
@@ -79,6 +78,10 @@ def variation_key(item, seed, ref_keys=(), audio_ref_keys=(),
         definition["video_refs"] = [list(p) for p in video_refs]
     if cont_video:
         definition["continue_video"] = list(cont_video)
+    if target_key:
+        definition["target"] = target_key
+    if target_video:
+        definition["target_video"] = list(target_video)
     payload = json.dumps(definition, sort_keys=True)
     return hashlib.sha1(payload.encode("utf-8")).hexdigest()[:16]
 
@@ -103,24 +106,17 @@ def load_store_image(rec):
 
 def load_store_audio(rec, sample_rate=None):
     """Decode a stored record's audio track. Preserves the NATIVE sample
-    rate and channel count by default (no silent resampling); pass
-    sample_rate to force a rate explicitly."""
+    rate and channel count by default; pass sample_rate to force one."""
     path = os.path.join(STORE_DIR, rec["filename"])
-    info = subprocess.run(
-        ["ffprobe", "-v", "error", "-select_streams", "a:0",
-         "-show_entries", "stream=sample_rate,channels",
-         "-print_format", "json", path],
-        capture_output=True)
-    try:
-        stream = json.loads(info.stdout)["streams"][0]
-        native_sr = int(stream["sample_rate"])
-        channels = int(stream["channels"])
-    except (KeyError, IndexError, ValueError, json.JSONDecodeError):
-        raise RuntimeError(f"could not probe audio stream of "
-                           f"{rec['filename']}")
+    stream = next((s for s in probe(path)["streams"]
+                   if s["codec_type"] == "audio"), None)
+    if stream is None:
+        raise RuntimeError(f"no audio stream in {rec['filename']}")
+    native_sr = int(stream["sample_rate"])
+    channels = int(stream["channels"])
 
     sr = sample_rate or native_sr
-    cmd = ["ffmpeg", "-v", "error", "-i", path, "-vn", "-f", "f32le",
+    cmd = [FFMPEG, "-v", "error", "-i", path, "-vn", "-f", "f32le",
            "-ac", str(channels)]
     if sample_rate:
         cmd += ["-ar", str(sample_rate)]

@@ -11,7 +11,8 @@ from .concat import CallsheetConcatVideos
 from .util_nodes import (CallsheetAudioShift, CallsheetAudioCrossfade,
                          CallsheetAudioResample, CallsheetAudioInfo,
                          CallsheetAudioTrim, CallsheetAudioPad,
-                         CallsheetJobRouter)
+                         CallsheetJobRouter, CallsheetHasValue,
+                         CallsheetConcatText, CallsheetTextChain)
 from . import routes  # noqa: F401  (registers /callsheet/clear)
 
 WEB_DIRECTORY = "./web"
@@ -36,6 +37,9 @@ NODE_CLASS_MAPPINGS = {
     "CallsheetAudioPad": CallsheetAudioPad,
     "CallsheetAudioResample": CallsheetAudioResample,
     "CallsheetAudioInfo": CallsheetAudioInfo,
+    "CallsheetHasValue": CallsheetHasValue,
+    "CallsheetConcatText": CallsheetConcatText,
+    "CallsheetTextChain": CallsheetTextChain,
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
@@ -58,4 +62,7 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "CallsheetAudioPad": "Callsheet Audio Pad",
     "CallsheetAudioResample": "Callsheet Audio Resample",
     "CallsheetAudioInfo": "Callsheet Audio Info",
+    "CallsheetHasValue": "Callsheet Has Value",
+    "CallsheetConcatText": "Callsheet Concat Text",
+    "CallsheetTextChain": "Callsheet Text Chain",
 }

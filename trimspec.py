@@ -4,8 +4,8 @@ the concat node's labels input.
 Entry:   label | label:SPEC
 Specs:   (empty)      whole clip
          H:T          drop H from the head, T from the tail
-         A-B          keep frame window [A, B)  (end-exclusive)
-         -N           keep the last N
+         :A-B         keep frame window [A, B)  (end-exclusive)
+         :-N          keep the last N
 Tokens are frames (int) or seconds ('1.5s'), interpreted at the SOURCE
 clip's fps at resolution time."""
 

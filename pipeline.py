@@ -22,10 +22,12 @@ def focus_closure(items, focus):
         it = by_label[l]
         deps = list(it["refs"]) + list(it["audio_refs"])
         deps += [x for x, _ in it.get("video_refs", [])]
-        if it.get("continue_frame"):
-            deps.append(it["continue_frame"])
-        if it.get("continue_video"):
-            deps.append(it["continue_video"][0])
+        for k in ("continue_frame", "target_frame"):
+            if it.get(k):
+                deps.append(it[k])
+        for k in ("continue_video", "target_video"):
+            if it.get(k):
+                deps.append(it[k][0])
         stack.extend(d for d in deps if d in by_label)
     return closure
 
@@ -68,7 +70,7 @@ class CallsheetPipeline:
                                          "advanced": True}),
             "uniform_flags": ("STRING", {"default": "",
                                          "advanced": True}),
-            "max_jobs_per_pass": ("INT", {"default": 0, "min": 0,
+            "max_jobs_per_pass": ("INT", {"default": 4, "min": 0,
                                           "max": 256, "advanced": True}),
         }, "optional": {
             "after_1": ("CS_ITEMS",),
@@ -83,7 +85,8 @@ class CallsheetPipeline:
                     "IMAGE",
                     "IMAGE", "IMAGE", "IMAGE",
                     "AUDIO", "AUDIO", "AUDIO",
-                    "IMAGE", "AUDIO", "CS_REFS")
+                    "IMAGE", "AUDIO", "CS_REFS",
+                    "IMAGE", "IMAGE", "AUDIO")
     RETURN_NAMES = ("prompt", "negative", "width", "height", "length",
                     "fps", "seed", "job", "flags",
                     "ref_1", "ref_2", "ref_3", "ref_4",
@@ -92,8 +95,9 @@ class CallsheetPipeline:
                     "video_ref_1", "video_ref_2", "video_ref_3",
                     "video_audio_ref_1", "video_audio_ref_2",
                     "video_audio_ref_3",
-                    "continue_video", "continue_video_audio", "refs")
-    OUTPUT_IS_LIST = tuple([True] * 26)
+                    "continue_video", "continue_video_audio", "refs",
+                    "target_frame", "target_video", "target_video_audio")
+    OUTPUT_IS_LIST = tuple([True] * 29)
     FUNCTION = "run"
     CATEGORY = "callsheet"
 
@@ -146,6 +150,8 @@ class CallsheetPipeline:
             aref_keys = [resolver(r) for r in item["audio_refs"]]
             cont_label = item.get("continue_frame")
             cont_key = resolver(cont_label) if cont_label else None
+            tgt_label = item.get("target_frame")
+            tgt_key = resolver(tgt_label) if tgt_label else None
 
             vref_pairs, vref_unresolved = [], []
             for l, spec in item.get("video_refs", []):
@@ -164,6 +170,15 @@ class CallsheetPipeline:
                 else:
                     cv_pair = [k, cv[1]]
 
+            tv = item.get("target_video")
+            tv_pair, tv_unresolved = None, None
+            if tv:
+                k = resolver(tv[0])
+                if k is None:
+                    tv_unresolved = tv[0]
+                else:
+                    tv_pair = [k, tv[1]]
+
             unresolved_deps = [d for d, k in
                                zip(item["refs"], ref_keys) if k is None]
             unresolved_deps += [d for d, k in
@@ -174,6 +189,10 @@ class CallsheetPipeline:
             unresolved_deps += vref_unresolved
             if cv_unresolved:
                 unresolved_deps.append(cv_unresolved)
+            if tgt_label and tgt_key is None:
+                unresolved_deps.append(tgt_label)
+            if tv_unresolved:
+                unresolved_deps.append(tv_unresolved)
 
             if unresolved_deps:
                 detail = "; ".join(f"'{d}' {why(d)}"
@@ -201,6 +220,12 @@ class CallsheetPipeline:
                 item_errors.append(
                     f"'{item['label']}': continue_frame '{cont_label}' "
                     f"resolved to a {cont_rec.get('kind')} variation — "
+                    f"must be video or image")
+            tgt_rec = VARIATION_STORE.get(tgt_key) if tgt_key else None
+            if tgt_rec and tgt_rec.get("kind") not in ("video", "image"):
+                item_errors.append(
+                    f"'{item['label']}': target_frame '{tgt_label}' "
+                    f"resolved to a {tgt_rec.get('kind')} variation — "
                     f"must be video or image")
 
             vref_windows = []
@@ -240,6 +265,24 @@ class CallsheetPipeline:
                     except ValueError as e:
                         item_errors.append(
                             f"'{item['label']}': continue_video: {e}")
+            tv_window = None
+            if tv_pair:
+                rec = VARIATION_STORE[tv_pair[0]]
+                if rec.get("kind") != "video":
+                    item_errors.append(
+                        f"'{item['label']}': target_video "
+                        f"'{tv[0]}' resolved to a {rec.get('kind')} "
+                        f"variation — must be video")
+                else:
+                    n_frames, src_fps, _, _ = video_frame_info(
+                        rec_path(tv_pair[0]))
+                    try:
+                        win = resolve_window(parse_spec(tv_pair[1]),
+                                             n_frames, src_fps)
+                        tv_window = (tv_pair[0], win, src_fps)
+                    except ValueError as e:
+                        item_errors.append(
+                            f"'{item['label']}': target_video: {e}")
 
             # ---- flags: pipeline name + user + auto ------------------------
             auto = [item["pipeline"]] if item["pipeline"] else []
@@ -257,6 +300,12 @@ class CallsheetPipeline:
                 auto.append("continue_video")
                 if VARIATION_STORE[cv_pair[0]].get("has_audio"):
                     auto.append("continue_video_audio")
+            if tgt_key:
+                auto.append("target_frame")
+            if tv_pair:
+                auto.append("target_video")
+                if VARIATION_STORE[tv_pair[0]].get("has_audio"):
+                    auto.append("target_video_audio")
             eff_flags = list(dict.fromkeys(item["flags"] + auto))
             if allowed:
                 bad = [f for f in eff_flags
@@ -274,7 +323,8 @@ class CallsheetPipeline:
             pending = []
             for seed in item["seeds"]:
                 key = variation_key(item, seed, ref_keys, aref_keys,
-                                    cont_key, vref_pairs, cv_pair)
+                                    cont_key, vref_pairs, cv_pair,
+                                    tgt_key, tv_pair)
                 if key not in VARIATION_STORE:
                     pending.append((seed, key))
             if not pending:
@@ -286,7 +336,9 @@ class CallsheetPipeline:
                 "ref_keys": ref_keys, "aref_keys": aref_keys,
                 "cont_key": cont_key, "cont_rec": cont_rec,
                 "vref_pairs": vref_pairs, "vref_windows": vref_windows,
-                "cv_window": cv_window, "signature": signature})
+                "cv_window": cv_window,
+                "tgt_key": tgt_key, "tgt_rec": tgt_rec,
+                "tv_window": tv_window, "signature": signature})
 
         if hard_errors:
             # raised BEFORE report(): this node never triggers a requeue
@@ -344,6 +396,14 @@ class CallsheetPipeline:
             else:
                 cont_frame = None
 
+            tgt_rec = c["tgt_rec"]
+            if tgt_rec is not None:
+                tgt_frame = (load_video_first_frame(tgt_rec)
+                             if tgt_rec.get("kind") == "video"
+                             else load_store_image(tgt_rec))
+            else:
+                tgt_frame = None
+
             ref_imgs = [load_store_image(VARIATION_STORE[k])
                         for k in c["ref_keys"]]
             while len(ref_imgs) < MAX_REFS:
@@ -374,6 +434,15 @@ class CallsheetPipeline:
                     cv_audio = load_store_audio_window(
                         rec, sf / src_fps, ef / src_fps)
 
+            tv_frames = tv_audio = None
+            if c["tv_window"]:
+                k, (sf, ef), src_fps = c["tv_window"]
+                rec = VARIATION_STORE[k]
+                tv_frames = load_video_frames(rec, (sf, ef))
+                if rec.get("has_audio"):
+                    tv_audio = load_store_audio_window(
+                        rec, sf / src_fps, ef / src_fps)
+
             bundle = {"label": item["label"],
                       "image_keys": list(c["ref_keys"]),
                       "image_names": list(item["refs"]),
@@ -384,7 +453,10 @@ class CallsheetPipeline:
                                       in item.get("video_refs", [])],
                       "continue_key": c["cont_key"],
                       "continue_video_key":
-                          c["cv_window"][0] if c["cv_window"] else None}
+                          c["cv_window"][0] if c["cv_window"] else None,
+                      "target_key": c["tgt_key"],
+                      "target_video_key":
+                          c["tv_window"][0] if c["tv_window"] else None}
 
             for seed, key in pending:
                 cols["prompt"].append(item["prompt"])
@@ -408,6 +480,9 @@ class CallsheetPipeline:
                     cols[f"video_audio_ref_{i + 1}"].append(vref_audio[i])
                 cols["continue_video"].append(cv_frames)
                 cols["continue_video_audio"].append(cv_audio)
+                cols["target_frame"].append(tgt_frame)
+                cols["target_video"].append(tv_frames)
+                cols["target_video_audio"].append(tv_audio)
                 cols["refs"].append(bundle)
 
         msg = (f"[CallsheetPipeline pass {passno}] '{pipeline_filter}': "

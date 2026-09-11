@@ -10,6 +10,7 @@ from .resolve import build_resolver
 from .store import STORE_DIR, VARIATION_STORE
 from .trimspec import split_label_spec, parse_spec, resolve_window
 from . import runstate
+from .binaries import FFMPEG
 
 
 def _first(x):
@@ -28,7 +29,7 @@ def _embed_metadata(out_path, payload):
         f.write("comment=" + esc(json.dumps(payload)) + "\n")
     tmp = out_path + ".tagged.mp4"
     ok = subprocess.run(
-        ["ffmpeg", "-y", "-i", out_path, "-i", meta_path,
+        [FFMPEG, "-y", "-i", out_path, "-i", meta_path,
          "-map_metadata", "1", "-map", "0", "-c", "copy", tmp],
         stderr=subprocess.DEVNULL).returncode == 0
     os.remove(meta_path)
@@ -221,20 +222,23 @@ class CallsheetConcatVideos:
             print("[CallsheetConcatVideos] auto order: "
                   + ", ".join(s[0] for s in specs))
 
-        # ---- seam dedupe for continue_frame chains -----------------------
+        # ---- seam dedupe for continue/target anchored clips ----------------
         resolved_specs = []
-        prev_label = None
-        for label, spec in specs:
-            if (spec == "" and dedupe_continues
-                    and prev_label is not None
-                    and by_label[label].get("continue_frame")
-                    == prev_label):
-                resolved_specs.append((label, "1:0"))
-                print(f"[CallsheetConcatVideos] '{label}' continues "
-                      f"'{prev_label}': dropping 1 seam frame")
-            else:
-                resolved_specs.append((label, spec))
-            prev_label = label
+        for i, (label, spec) in enumerate(specs):
+            if spec == "" and dedupe_continues:
+                it = by_label[label]
+                prev_l = specs[i - 1][0] if i > 0 else None
+                next_l = specs[i + 1][0] if i + 1 < len(specs) else None
+                head = 1 if (prev_l
+                             and it.get("continue_frame") == prev_l) else 0
+                tail = 1 if (next_l
+                             and it.get("target_frame") == next_l) else 0
+                if head or tail:
+                    spec = f"{head}:{tail}"
+                    print(f"[CallsheetConcatVideos] '{label}': dropping "
+                          f"{head} head / {tail} tail seam frame(s) "
+                          f"(continue/target anchors)")
+            resolved_specs.append((label, spec))
         specs = resolved_specs
 
         clips = [(selected_video(l), spec) for l, spec in specs]
@@ -255,7 +259,7 @@ class CallsheetConcatVideos:
                 return self._notice(f"'{specs[i][0]}': {e}", problem=True)
             windows.append((sf, ef, src_fps))
 
-        cmd = ["ffmpeg", "-y"]
+        cmd = [FFMPEG, "-y"]
         for rec, _ in clips:
             cmd += ["-i", os.path.join(STORE_DIR, rec["filename"])]
 

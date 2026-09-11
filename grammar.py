@@ -18,11 +18,30 @@ PIPELINE_TYPES = ("image", "video", "audio")
 
 KNOWN_KEYS = {"label", "pipeline", "size", "width", "height", "length",
               "fps", "seed", "negative", "ref", "audio_ref", "video_ref",
-              "continue_frame", "continue_video", "source", "flags"}
+              "continue_frame", "continue_video",
+              "target_frame", "target_video", "source", "flags"}
 # properties that make no sense in a rolling defaults block
 ITEM_ONLY_KEYS = {"label", "ref", "audio_ref", "video_ref", "source",
-                  "continue_frame", "continue_video"}
+                  "continue_frame", "continue_video",
+                  "target_frame", "target_video"}
 DEFAULTABLE_KEYS = KNOWN_KEYS - ITEM_ONLY_KEYS
+
+
+def parse_pipeline_types(spec):
+    """'name:type, name:type, ...' -> {name: type-or-None}."""
+    pipeline_types = {}
+    for tok in spec.split(","):
+        tok = tok.strip()
+        if not tok:
+            continue
+        name, _, t = tok.partition(":")
+        name, t = name.strip(), t.strip().lower()
+        if t and t not in PIPELINE_TYPES:
+            raise ValueError(
+                f"allowed_pipelines: unknown type '{t}' for '{name}' "
+                f"(use {', '.join(PIPELINE_TYPES)})")
+        pipeline_types[name] = t or None
+    return pipeline_types
 
 
 def _looks_like_pure_headers(raw):
@@ -122,21 +141,19 @@ def _parse_ref_list(headers, key, tag, errors):
     return out
 
 
-def parse_pipeline_types(spec):
-    """'name:type, name:type, ...' -> {name: type-or-None}."""
-    pipeline_types = {}
-    for tok in spec.split(","):
-        tok = tok.strip()
-        if not tok:
-            continue
-        name, _, t = tok.partition(":")
-        name, t = name.strip(), t.strip().lower()
-        if t and t not in PIPELINE_TYPES:
-            raise ValueError(
-                f"allowed_pipelines: unknown type '{t}' for '{name}' "
-                f"(use {', '.join(PIPELINE_TYPES)})")
-        pipeline_types[name] = t or None
-    return pipeline_types
+def _parse_single_clip(headers, key, tag, errors):
+    """Parses a single 'label[:spec]' header into [label, spec] or None."""
+    raw = headers.get(key, "").strip()
+    if not raw:
+        return None
+    if "," in raw:
+        errors.append(f"{tag}: '{key}' takes a single entry")
+        return None
+    label, spec = split_label_spec(raw)
+    err = validate_spec(spec)
+    if err:
+        errors.append(f"{tag}: {key} '{raw}': {err}")
+    return [label, spec]
 
 
 def parse_and_validate(text, pipeline_types, strict, base_seed,
@@ -202,22 +219,21 @@ def parse_and_validate(text, pipeline_types, strict, base_seed,
         if cont and "," in cont:
             errors.append(f"{tag}: 'continue_frame' takes a single label")
             cont = None
-
-        cont_video = None
-        cv = headers.get("continue_video", "").strip()
-        if cv:
-            if "," in cv:
-                errors.append(f"{tag}: 'continue_video' takes a single "
-                              f"entry")
-            else:
-                cv_label, cv_spec = split_label_spec(cv)
-                err = validate_spec(cv_spec)
-                if err:
-                    errors.append(f"{tag}: continue_video '{cv}': {err}")
-                cont_video = [cv_label, cv_spec]
+        cont_video = _parse_single_clip(headers, "continue_video",
+                                        tag, errors)
         if cont and cont_video:
             errors.append(f"{tag}: use either 'continue_frame' or "
                           f"'continue_video', not both")
+
+        tgt = headers.get("target_frame", "").strip() or None
+        if tgt and "," in tgt:
+            errors.append(f"{tag}: 'target_frame' takes a single label")
+            tgt = None
+        tgt_video = _parse_single_clip(headers, "target_video",
+                                       tag, errors)
+        if tgt and tgt_video:
+            errors.append(f"{tag}: use either 'target_frame' or "
+                          f"'target_video', not both")
 
         # ---- pipeline + declared type ---------------------------------------
         def resolve(key):
@@ -257,9 +273,10 @@ def parse_and_validate(text, pipeline_types, strict, base_seed,
                 errors.append(f"{tag}: invalid flag '{f}'")
 
         if injected:
-            if refs or audio_refs or video_refs or cont or cont_video:
-                errors.append(f"{tag}: injected items cannot have refs "
-                              f"or continuations")
+            if (refs or audio_refs or video_refs or cont or cont_video
+                    or tgt or tgt_video):
+                errors.append(f"{tag}: injected items cannot have refs, "
+                              f"continuations, or targets")
             if label in variation_requests:
                 errors.append(f"{tag}: cannot request variations for an "
                               f"injected item")
@@ -270,7 +287,8 @@ def parse_and_validate(text, pipeline_types, strict, base_seed,
                           "flags": flags, "seeds": [],
                           "injected": True, "refs": [], "audio_refs": [],
                           "video_refs": [], "continue_frame": None,
-                          "continue_video": None})
+                          "continue_video": None,
+                          "target_frame": None, "target_video": None})
             index += 1
             continue
 
@@ -371,7 +389,9 @@ def parse_and_validate(text, pipeline_types, strict, base_seed,
                       "injected": False, "refs": refs,
                       "audio_refs": audio_refs, "video_refs": video_refs,
                       "continue_frame": cont,
-                      "continue_video": cont_video})
+                      "continue_video": cont_video,
+                      "target_frame": tgt,
+                      "target_video": tgt_video})
         index += 1
 
     # ---- reference validation --------------------------------------------------
@@ -379,10 +399,12 @@ def parse_and_validate(text, pipeline_types, strict, base_seed,
 
     def edges(it):
         e = it["refs"] + it["audio_refs"] + [l for l, _ in it["video_refs"]]
-        if it["continue_frame"]:
-            e = e + [it["continue_frame"]]
-        if it["continue_video"]:
-            e = e + [it["continue_video"][0]]
+        for k in ("continue_frame", "target_frame"):
+            if it[k]:
+                e = e + [it[k]]
+        for k in ("continue_video", "target_video"):
+            if it[k]:
+                e = e + [it[k][0]]
         return e
 
     for it in items:
@@ -424,20 +446,20 @@ def parse_and_validate(text, pipeline_types, strict, base_seed,
                 errors.append(f"'{it['label']}': video_ref '{r}' must be "
                               f"a video item, but its pipeline is "
                               f"typed '{t}'")
-        if it["continue_frame"]:
-            t = target_type(it["continue_frame"])
-            if t and t not in ("video", "image"):
-                errors.append(f"'{it['label']}': continue_frame "
-                              f"'{it['continue_frame']}' must be a video "
-                              f"or image item, but its pipeline is "
-                              f"typed '{t}'")
-        if it["continue_video"]:
-            t = target_type(it["continue_video"][0])
-            if t and t != "video":
-                errors.append(f"'{it['label']}': continue_video "
-                              f"'{it['continue_video'][0]}' must be a "
-                              f"video item, but its pipeline is "
-                              f"typed '{t}'")
+        for k in ("continue_frame", "target_frame"):
+            if it[k]:
+                t = target_type(it[k])
+                if t and t not in ("video", "image"):
+                    errors.append(f"'{it['label']}': {k} '{it[k]}' must "
+                                  f"be a video or image item, but its "
+                                  f"pipeline is typed '{t}'")
+        for k in ("continue_video", "target_video"):
+            if it[k]:
+                t = target_type(it[k][0])
+                if t and t != "video":
+                    errors.append(f"'{it['label']}': {k} "
+                                  f"'{it[k][0]}' must be a video item, "
+                                  f"but its pipeline is typed '{t}'")
 
     WHITE, GRAY, BLACK = 0, 1, 2
     color = {l: WHITE for l in by_label}

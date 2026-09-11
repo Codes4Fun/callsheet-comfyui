@@ -1,6 +1,6 @@
 import { app } from "../../scripts/app.js";
 import { api } from "../../scripts/api.js";
-import { viewUrl, getWidget, findInputNode, updateJsonWidget,
+import { viewUrl, getWidget, getSlot, findInputNode, updateJsonWidget,
          triggerDownload } from "./common.js";
 
 const COLLECTOR = "CallsheetCollector";
@@ -23,13 +23,32 @@ function normalizeInputs(node) {
 }
 
 // ---- refresh without queueing -------------------------------------------------
-async function refreshAssets(node, silent) {
+async function refreshAssets(node, init) {
   const inputNode = findInputNode(node);
   if (!inputNode) {
-    if (!silent) alert("No Callsheet Text Input node found");
+    if (!init) alert("No Callsheet Text Input node found");
     return;
   }
+  const val_slot_preview = (n) => {
+    const s = getSlot(inputNode, n);
+    if (!s || s.link == null) return null;
+    const link = node.graph?.links[s.link];
+    if (!link) return null;
+    if (link.origin_id < 0) {
+      alert("subgraphs are not supported");
+      return null;
+    }
+    const other = node.graph?.getNodeById(link.origin_id);
+    if (!other || other.type != 'PreviewAny') return null;
+    const w = getWidget(other, "preview_text");
+    if (!w) return null;
+    return w.value;
+  }
   const val = (n, d) => {
+    if (n == "text") {
+      const v = val_slot_preview(n);
+      if (v != null) return v;
+    }
     const w = getWidget(inputNode, n);
     return w == null || w.value == null ? d : w.value;
   };
@@ -50,13 +69,17 @@ async function refreshAssets(node, silent) {
       method: "POST", body: JSON.stringify(body) });
     const data = await res.json();
     if (data.error) {
-      if (!silent) alert("Callsheet: " + data.error);
+      if (!init) alert("Callsheet: " + data.error);
       return;
     }
     node.csState.assets = data.assets;
+    if (init) {
+      const f = getFocusIndex(node, false);
+      if (f != -1) node.csState.current = f;
+    }
     node.csRender();
   } catch (e) {
-    if (!silent) alert("Callsheet refresh failed: " + e);
+    if (!init) alert("Callsheet refresh failed: " + e);
   }
 }
 
@@ -75,6 +98,30 @@ function setFocus(node, list) {
   const w = inputNode && getWidget(inputNode, "focus");
   if (w) w.value = JSON.stringify(list);
   node.csRender();
+}
+
+function getAssetIndex(node, name) {
+  const {assets} = node.csState;
+  return assets.findIndex((a) => a.label === name);
+}
+
+function getFocusIndex(node, next=false) {
+  const focus = getFocus(node);
+  if (!focus || !focus.length) return -1;
+  const focus_idx = focus.map((n) => getAssetIndex(node, n));
+  if (next) { // goto focus greater than current index
+    const {current} = node.csState;
+    for (const f of focus_idx) {
+      if (f > current) return f;
+    }
+  }
+  // return first valid focus index
+  for (const f of focus_idx) {
+    if (f != -1) {
+      return f;
+    }
+  }
+  return -1; // no focus index
 }
 
 // ---- state mutations ------------------------------------------------------------
@@ -175,6 +222,13 @@ function buildUI(node) {
           textContent: "🎯 focus: " + focus.join(", ") +
                        " (other items on hold)",
           style: "flex:1;",
+        }),
+        mkBtn("goto", () => {
+          const f = getFocusIndex(node, true);
+          if (f != -1) {
+            node.csState.current = f;
+            node.csRender();
+          }
         }),
         mkBtn("clear", () => setFocus(node, [])),
       );

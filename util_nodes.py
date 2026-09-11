@@ -319,3 +319,120 @@ class CallsheetJobRouter:
         for j, fl in zip(job, flags):
             (on if flag in fl else off).append(j)
         return (on, off)
+
+
+class CallsheetHasValue:
+    """Outputs True when the input carries a value, False when it is
+    None — e.g. wire a pipeline's continue_frame / target_frame output
+    in, and use the boolean to drive lazy switches without a separate
+    CallsheetFlag lookup. Accepts any type. Maps per-item over lists.
+
+    NOTE: this does not lift the uniform_flags requirement — a lazy
+    switch downstream still resolves per-BATCH, so a flag/anchor that
+    changes graph topology must keep the batch homogeneous."""
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {"optional": {"value": ("*",)}}
+
+    @classmethod
+    def VALIDATE_INPUTS(cls, input_types):
+        return True   # accept any upstream type
+
+    RETURN_TYPES = ("BOOLEAN",)
+    RETURN_NAMES = ("has_value",)
+    FUNCTION = "check"
+    CATEGORY = "callsheet"
+
+    def check(self, value=None):
+        return (value is not None,)
+
+
+class CallsheetConcatText:
+    """
+    Concatenates an arbitrary number of string inputs (expanding sockets,
+    managed by the frontend JS) using a selectable delimiter.
+
+    Inputs that are None (e.g. from bypassed upstream nodes) or empty
+    strings are skipped entirely -- no dangling delimiters.
+    """
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "delimiter": (["comma", "period", "new line", "auto new line"],
+                              {"default": "auto new line"}),
+            },
+            "optional": {
+                # The JS extension adds text_2, text_3, ... as connections
+                # are made. Extra inputs arrive via **kwargs; ComfyUI only
+                # type-validates declared inputs, so this is safe.
+                "text_1": ("STRING", {"forceInput": True}),
+            },
+        }
+
+    RETURN_TYPES = ("STRING",)
+    RETURN_NAMES = ("text",)
+    FUNCTION = "concat"
+    CATEGORY = "Callsheet/Text"
+
+    def concat(self, delimiter, **kwargs):
+        def sort_key(name):
+            try:
+                return int(name.rsplit("_", 1)[-1])
+            except ValueError:
+                return 0
+
+        parts = []
+        for key in sorted(kwargs.keys(), key=sort_key):
+            value = kwargs[key]
+            if value is None:  # bypassed node upstream
+                continue
+            value = str(value)
+            if value == "":
+                continue
+            parts.append(value)
+
+        if delimiter == "comma":
+            return (", ".join(parts),)
+        if delimiter == "period":
+            return (". ".join(parts),)
+        if delimiter == "new line":
+            return ("\n".join(parts),)
+
+        # auto new line: only insert \n if the boundary doesn't already have one
+        out = ""
+        for part in parts:
+            if out and not out.endswith("\n") and not part.startswith("\n"):
+                out += "\n"
+            out += part
+        return (out,)
+
+
+class CallsheetTextChain:
+    """
+    A string node that concatenates a multiline text widget with an optional
+    STRING input. If the STRING input is connected, it will prepend the input
+    string to the widget text.
+    """
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "text": ("STRING", {"multiline": True, "default": ""}),
+            },
+            "optional": {
+                "prefix": ("STRING", {"forceInput": True}),
+            }
+        }
+
+    RETURN_TYPES = ("STRING",)
+    FUNCTION = "concatenate_strings"
+    CATEGORY = "Callsheet/Text"
+
+    def concatenate_strings(self, text, prefix=None):
+        if prefix is None or prefix == "":
+            return (text,)
+        return (prefix + text,)

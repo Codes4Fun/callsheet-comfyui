@@ -10,6 +10,10 @@ export function getWidget(node, name) {
   return node.widgets?.find((w) => w.name === name);
 }
 
+export function getSlot(node, name) {
+  return node.slots?.find((w) => w.name === name);
+}
+
 // Follow the 'parsed' link to the CallsheetTextInput node, so cloned
 // text nodes and multiple batches per graph resolve correctly.
 export function findInputNode(node) {

@@ -8,6 +8,7 @@ import torch
 from PIL import Image
 
 from .store import STORE_DIR
+from .binaries import FFMPEG, probe
 
 FORMAT_PRESETS = {
     # name: (extension, video args, browser_playable)
@@ -38,14 +39,6 @@ AUDIO_FORMAT_PRESETS = {
     "wav": (".wav", ["-c:a", "pcm_s16le"]),
     "mp3": (".mp3", ["-c:a", "libmp3lame", "-b:a", "256k"]),
 }
-
-
-def probe(path):
-    out = subprocess.run(
-        ["ffprobe", "-v", "error", "-print_format", "json",
-         "-show_streams", "-show_format", path],
-        capture_output=True)
-    return json.loads(out.stdout)
 
 
 def video_frame_info(path):
@@ -80,7 +73,7 @@ def load_video_frames(rec, window):
     sf, ef = window
     _, _, w, h = video_frame_info(path)
     out = subprocess.run(
-        ["ffmpeg", "-v", "error", "-i", path,
+        [FFMPEG, "-v", "error", "-i", path,
          "-vf", f"trim=start_frame={sf}:end_frame={ef},"
                 f"setpts=PTS-STARTPTS",
          "-f", "rawvideo", "-pix_fmt", "rgb24", "-"],
@@ -100,12 +93,12 @@ def load_video_last_frame(rec):
     _, _, w, h = video_frame_info(path)
     frame_size = w * h * 3
     out = subprocess.run(
-        ["ffmpeg", "-v", "error", "-sseof", "-1", "-i", path,
+        [FFMPEG, "-v", "error", "-sseof", "-1", "-i", path,
          "-f", "rawvideo", "-pix_fmt", "rgb24", "-"],
         capture_output=True).stdout
     if len(out) < frame_size:
         out = subprocess.run(
-            ["ffmpeg", "-v", "error", "-i", path,
+            [FFMPEG, "-v", "error", "-i", path,
              "-f", "rawvideo", "-pix_fmt", "rgb24", "-"],
             capture_output=True).stdout
     if len(out) < frame_size:
@@ -130,7 +123,7 @@ def load_store_audio_window(rec, start_t, end_t, sample_rate=None):
     channels = int(stream["channels"])
 
     sr = sample_rate or native_sr
-    cmd = ["ffmpeg", "-v", "error", "-i", path, "-vn",
+    cmd = [FFMPEG, "-v", "error", "-i", path, "-vn",
            "-af", f"atrim=start={start_t:.4f}:end={end_t:.4f},"
                   f"asetpts=PTS-STARTPTS",
            "-f", "f32le", "-ac", str(channels)]
@@ -154,7 +147,7 @@ def encode_video_master(arr, fps, aud, base, ext, vargs, audio_args=None):
     master, poster = base + ext, base + "_poster.jpg"
     f, h, w, _ = arr.shape
     wav_path = None
-    cmd = ["ffmpeg", "-y", "-f", "rawvideo", "-pix_fmt", "rgb24",
+    cmd = [FFMPEG, "-y", "-f", "rawvideo", "-pix_fmt", "rgb24",
            "-s", f"{w}x{h}", "-r", str(fps), "-i", "-"]
     if aud is not None:
         wav_path = os.path.join(STORE_DIR, base + "_tmp.wav")
@@ -183,11 +176,11 @@ def encode_audio_master(aud, base, ext, aargs):
     wav_path = os.path.join(STORE_DIR, base + "_tmp.wav")
     write_wav(wav_path, aud["waveform"], aud["sample_rate"])
     ok = subprocess.run(
-        ["ffmpeg", "-y", "-i", wav_path] + aargs
+        [FFMPEG, "-y", "-i", wav_path] + aargs
         + [os.path.join(STORE_DIR, master)],
         stderr=subprocess.DEVNULL).returncode == 0
     ok = ok and subprocess.run(
-        ["ffmpeg", "-y", "-i", wav_path, "-filter_complex",
+        [FFMPEG, "-y", "-i", wav_path, "-filter_complex",
          "showwavespic=s=480x120:colors=0x66cc66", "-frames:v", "1",
          os.path.join(STORE_DIR, poster)],
         stderr=subprocess.DEVNULL).returncode == 0
@@ -195,3 +188,19 @@ def encode_audio_master(aud, base, ext, aargs):
     if not ok:
         raise RuntimeError(f"audio encode failed for {base}")
     return master, poster
+
+
+def load_video_first_frame(rec):
+    """Decode frame 0 of a stored video as [1, H, W, 3] float 0..1."""
+    path = os.path.join(STORE_DIR, rec["filename"])
+    _, _, w, h = video_frame_info(path)
+    frame_size = w * h * 3
+    out = subprocess.run(
+        [FFMPEG, "-v", "error", "-i", path, "-frames:v", "1",
+         "-f", "rawvideo", "-pix_fmt", "rgb24", "-"],
+        capture_output=True).stdout
+    if len(out) < frame_size:
+        raise RuntimeError(f"could not decode first frame of "
+                           f"{rec['filename']}")
+    arr = np.frombuffer(out[:frame_size], np.uint8).reshape(h, w, 3)
+    return torch.from_numpy(arr.astype(np.float32) / 255.0)[None,]

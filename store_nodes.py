@@ -8,6 +8,7 @@ from .media import (FORMAT_PRESETS, AUDIO_CODEC_ARGS, AUDIO_FORMAT_PRESETS,
                     encode_video_master, encode_audio_master)
 from .store import STORE_DIR, register, unresolved
 from .config import STORE_SUBFOLDER
+from .binaries import FFMPEG
 
 
 def _check_kinds(job, expected, node_name):
@@ -157,7 +158,7 @@ class CallsheetStoreVideos:
             preview = None
             if not browser_ok:
                 preview = base + "_preview.mp4"
-                pcmd = ["ffmpeg", "-y",
+                pcmd = [FFMPEG, "-y",
                         "-i", os.path.join(STORE_DIR, master),
                         "-c:v", "libx264", "-pix_fmt", "yuv420p",
                         "-crf", "26", "-vf", "scale=-2:'min(720,ih)'",
