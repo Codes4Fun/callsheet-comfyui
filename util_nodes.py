@@ -1,6 +1,9 @@
 import torch
 import torchaudio
 
+from nodes import LoraLoader
+import re
+
 
 def _match_check(a, b, node_name):
     if a["sample_rate"] != b["sample_rate"]:
@@ -436,3 +439,50 @@ class CallsheetTextChain:
         if prefix is None or prefix == "":
             return (text,)
         return (prefix + text,)
+
+
+class CallsheetLoRATagLoader(LoraLoader):
+    @classmethod
+    def INPUT_TYPES(s):
+        return {
+            "required": {
+                "model": ("MODEL", {"tooltip": "The diffusion model the LoRA will be applied to."}),
+                "clip": ("CLIP", {"tooltip": "The CLIP model the LoRA will be applied to."}),
+                "prompt": ("STRING", {"forceInput": True}),
+            }
+        }
+
+    RETURN_TYPES = ("MODEL", "CLIP", "STRING")
+    RETURN_NAMES = ("model","clip","prompt")
+    OUTPUT_TOOLTIPS = ("The modified diffusion model.", "The modified CLIP model.")
+    FUNCTION = "parse_and_load_loras"
+
+    CATEGORY = "model/loaders"
+    DESCRIPTION = "This LoRA loader is used to modify both diffusion and CLIP models, altering the way in which latents are denoised such as applying styles."
+    SEARCH_ALIASES = ["lora", "load lora", "apply lora", "lora loader", "lora model"]
+
+    def parse_and_load_loras(self, model, clip, prompt):
+        # Regular expression to match LoRA tags
+        # Pattern matches: <lora:path:strength> or <lora:path:strength_model:strength_clip>
+        lora_pattern = r'<lora:([^:]+):([0-9.-]+)(?::([0-9.-]+))?>'
+        
+        # Find all LoRA tags in the prompt
+        matches = re.findall(lora_pattern, prompt)
+        
+        # Process each LoRA tag
+        for match in matches:
+            lora_path = match[0]
+            strength_model = float(match[1])
+            
+            if match[2]:  # If we have a second strength value (strength_clip)
+                strength_clip = float(match[2])
+                # Load LoRA with both model and clip strengths
+                model, clip = self.load_lora(model, clip, lora_path, strength_model, strength_clip)
+            else:
+                # Load LoRA with only model strength
+                model = self.load_lora(model, None, lora_path, strength_model, 0)[0]
+        
+        # Remove all LoRA tags from the prompt
+        cleaned_prompt = re.sub(lora_pattern, '', prompt)
+        
+        return (model, clip, cleaned_prompt)
