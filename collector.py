@@ -12,7 +12,9 @@ def build_assets(items, selections, wanted):
         has_deps = (item["injected"] or item["refs"]
                     or item["audio_refs"] or item.get("video_refs")
                     or item.get("continue_frame")
-                    or item.get("continue_video"))
+                    or item.get("continue_video")
+                    or item.get("target_frame")
+                    or item.get("target_video"))
         if has_deps:
             recs = [(k, r) for k, r in VARIATION_STORE.items()
                     if r["label"] == item["label"]]
