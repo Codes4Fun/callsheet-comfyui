@@ -29,8 +29,8 @@ class CallsheetStoreImages:
     @classmethod
     def INPUT_TYPES(cls):
         return {"required": {
-            "images": ("IMAGE", {"lazy": True}),
             "job": ("CS_JOB",),
+            "images": ("IMAGE", {"lazy": True}),
         }}
 
     RETURN_TYPES = ("CS_ITEMS",)
@@ -43,7 +43,7 @@ class CallsheetStoreImages:
             return []
         return ["images"] if unresolved(images) else []
 
-    def store(self, images, job):
+    def store(self, job, images):
         if not job:
             return ([],)
         _check_kinds(job, "image", "CallsheetStoreImages")
@@ -76,10 +76,10 @@ class CallsheetStoreVideos:
     @classmethod
     def INPUT_TYPES(cls):
         return {"required": {
-            "frames": ("IMAGE", {"lazy": True}),
+            "job": ("CS_JOB",),
             "fps": ("INT", {"default": 24, "min": 1, "max": 120,
                             "forceInput": True}),
-            "job": ("CS_JOB",),
+            "frames": ("IMAGE", {"lazy": True}),
             "format": (list(FORMAT_PRESETS.keys()),),
             # 'flac'/'pcm_s16le' avoid lossy audio compounding across
             # continuation chains; aac is the browser-safe default
@@ -95,7 +95,7 @@ class CallsheetStoreVideos:
     FUNCTION = "store"
     CATEGORY = "callsheet"
 
-    def check_lazy_status(self, frames, fps, job, format, audio_format,
+    def check_lazy_status(self, job, fps, frames, format, audio_format,
                           audio=None, custom_ffmpeg_args=None, **kw):
         if not job:
             return []
@@ -106,7 +106,7 @@ class CallsheetStoreVideos:
             needed.append("audio")
         return needed
 
-    def store(self, frames, fps, job, format, audio_format,
+    def store(self, job, fps, frames, format, audio_format,
               audio=None, custom_ffmpeg_args=None):
         if not job:
             return ([],)
@@ -185,8 +185,8 @@ class CallsheetStoreAudio:
     @classmethod
     def INPUT_TYPES(cls):
         return {"required": {
-            "audio": ("AUDIO", {"lazy": True}),
             "job": ("CS_JOB",),
+            "audio": ("AUDIO", {"lazy": True}),
             "format": (list(AUDIO_FORMAT_PRESETS.keys()),),
         }}
 
@@ -200,7 +200,7 @@ class CallsheetStoreAudio:
             return []
         return ["audio"] if unresolved(audio) else []
 
-    def store(self, audio, job, format):
+    def store(self, job, audio, format):
         if not job:
             return ([],)
         _check_kinds(job, "audio", "CallsheetStoreAudio")

@@ -5,7 +5,7 @@ from aiohttp import web
 from server import PromptServer
 
 from .collector import build_assets
-from .grammar import parse_and_validate, parse_pipeline_types
+from .grammar import parse_and_validate
 from .store import STORE_DIR, VARIATION_STORE, save_manifest
 
 
@@ -38,16 +38,16 @@ async def cs_assets(request):
     populate-on-load, so browsing never triggers generation."""
     data = await request.json()
     try:
-        pipeline_types = parse_pipeline_types(
-            data.get("allowed_pipelines", "") or "")
-        requests_ = json.loads(data.get("variation_requests") or "{}")
-        selections = json.loads(data.get("selections") or "{}")
+        pipeline_specs = json.loads(data.get("pipeline_specs") or "{}")
+        state = json.loads(data.get("state") or '{}')
+        requests_ = state["variation_requests"] if "variation_requests" in state else {}
+        selections = state["selections"] if "selections" in state else {}
         if not isinstance(requests_, dict) or not isinstance(
                 selections, dict):
             raise ValueError("variation_requests/selections must be "
                              "JSON objects")
         items = parse_and_validate(
-            data.get("text", ""), pipeline_types,
+            data.get("text", ""), pipeline_specs,
             bool(data.get("strict")),
             int(data.get("base_seed") or 0),
             {"width": str(data.get("fallback_width") or 1024),

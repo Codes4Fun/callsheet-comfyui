@@ -27,6 +27,40 @@ ITEM_ONLY_KEYS = {"label", "ref", "audio_ref", "video_ref", "source",
 DEFAULTABLE_KEYS = KNOWN_KEYS - ITEM_ONLY_KEYS
 
 
+def validate_pipeline_types(pipelines):
+    pipeline_types = {}
+    for name in pipelines:
+        tasks = pipelines[name]["tasks"]
+        for task in tasks:
+            t = tasks[task]
+            if t and t not in PIPELINE_TYPES:
+                raise ValueError(
+                    f"allowed_pipelines: unknown type '{t}' for '{name}' "
+                    f"(use {', '.join(PIPELINE_TYPES)})")
+            pipeline_types[task] = t or None
+    return pipeline_types
+
+
+def pipeline_tasks(pipelines):
+    tasks = {}
+    for pipeline_name in pipelines:
+        pipeline = pipelines[pipeline_name]
+        pipeline_tasks = pipeline["tasks"]
+        for task in pipeline_tasks:
+            task_type = pipeline_tasks[task]
+            if task_type and task_type not in PIPELINE_TYPES:
+                raise ValueError(
+                    f"allowed_pipelines: unknown type '{task_type}' for '{pipeline_name}' "
+                    f"(use {', '.join(PIPELINE_TYPES)})")
+            tasks[task] = {
+                "type": task_type or None,
+                "size_step": pipeline["size"]["step"] if "size" in pipeline and "step" in pipeline["size"] else 1,
+                "length_step": pipeline["length"]["step"] if "length" in pipeline and "step" in pipeline["length"] else 1,
+                "length_offset": pipeline["length"]["offset"] if "length" in pipeline and "offset" in pipeline["length"] else 0,
+            }
+    return tasks
+
+
 def parse_pipeline_types(spec):
     """'name:type, name:type, ...' -> {name: type-or-None}."""
     pipeline_types = {}
@@ -87,7 +121,7 @@ def _check_keys(headers, allowed, tag, errors):
                 + (f" — did you mean '{sugg[0]}'?" if sugg else ""))
 
 
-def _parse_size(val, tag, errors, default_step=64):
+def _parse_size(val, tag, errors, default_step=1):
     m = _SIZE_WXH.match(val)
     if m:
         return int(m.group(1)), int(m.group(2))
@@ -156,15 +190,17 @@ def _parse_single_clip(headers, key, tag, errors):
     return [label, spec]
 
 
-def parse_and_validate(text, pipeline_types, strict, base_seed,
+def parse_and_validate(text, pipelines, strict, base_seed,
                        widget_defaults, variation_requests):
-    """pipeline_types: dict name -> 'image'|'video'|'audio'|None.
-    Strict mode requires every referenced pipeline to be declared AND
+    """Strict mode requires every referenced pipeline to be declared AND
     typed; typed pipelines get property/ref-kind enforcement here. Items
     in untyped pipelines fall back to lazy validation at runtime."""
     blocks = _split_blocks(text)
     errors, defaults, items = [], {}, []
     seen_labels = set()
+
+    pipeline_types = validate_pipeline_types(pipelines)
+    tasks = pipeline_tasks(pipelines)
 
     index = 0
     for bi, raw in enumerate(blocks):
@@ -248,10 +284,12 @@ def parse_and_validate(text, pipeline_types, strict, base_seed,
 
         pipeline = (headers.get("pipeline", defaults.get("pipeline"))
                     if injected else resolve("pipeline"))
-        ptype = pipeline_types.get(pipeline) if pipeline else None
+        #ptype = tasks.get(pipeline) if pipeline else None
         if pipeline is not None:
+            task = tasks.get(pipeline)
+            ptype = task["type"] if task else None
             if strict:
-                if pipeline not in pipeline_types:
+                if pipeline not in tasks:
                     errors.append(
                         f"{tag}: pipeline '{pipeline}' is not declared in "
                         f"allowed_pipelines (strict mode requires "
@@ -260,10 +298,12 @@ def parse_and_validate(text, pipeline_types, strict, base_seed,
                     errors.append(
                         f"{tag}: pipeline '{pipeline}' is declared without "
                         f"a type (strict mode requires 'name:type')")
-            elif pipeline_types and pipeline not in pipeline_types:
+            elif tasks and pipeline not in tasks:
                 errors.append(f"{tag}: unknown pipeline '{pipeline}' "
                               f"(declared: "
-                              f"{', '.join(sorted(pipeline_types))})")
+                              f"{', '.join(sorted(tasks))})")
+        else:
+            ptype = None
 
         # ---- flags ------------------------------------------------------------
         flags_raw = headers.get("flags", defaults.get("flags", ""))

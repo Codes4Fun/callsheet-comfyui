@@ -54,14 +54,13 @@ async function refreshAssets(node, init) {
   };
   const body = {
     text: val("text", ""),
-    allowed_pipelines: val("allowed_pipelines", ""),
+    pipeline_specs: val("pipeline_specs", ""),
     strict: !!val("strict", false),
     base_seed: val("base_seed", 0),
     fallback_width: val("fallback_width", 1024),
     fallback_height: val("fallback_height", 1024),
     fallback_fps: val("fallback_fps", 24),
-    variation_requests: val("variation_requests", "{}"),
-    selections: val("selections", "{}"),
+    state: val("state",'{"variation_requests":{},"selections":{},"focus":[]}'),
     pipeline_filter: getWidget(node, "pipeline_filter")?.value ?? "",
   };
   try {
@@ -69,7 +68,11 @@ async function refreshAssets(node, init) {
       method: "POST", body: JSON.stringify(body) });
     const data = await res.json();
     if (data.error) {
-      if (!init) alert("Callsheet: " + data.error);
+      if (!init) {
+        console.error("Callsheet:");
+        console.error(data.error);
+        alert("Callsheet: " + data.error);
+      }
       return;
     }
     node.csState.assets = data.assets;
@@ -79,24 +82,49 @@ async function refreshAssets(node, init) {
     }
     node.csRender();
   } catch (e) {
-    if (!init) alert("Callsheet refresh failed: " + e);
+    if (!init) {
+      console.error("Callsheet refresh failed:")
+      console.error(e);
+      alert("Callsheet refresh failed: " + e);
+    }
   }
 }
 
 // ---- focus helpers (state lives on the input node) --------------------------
 function getFocus(node) {
   const inputNode = findInputNode(node);
-  const w = inputNode && getWidget(inputNode, "focus");
-  try {
-    const f = JSON.parse(w?.value || "[]");
-    return Array.isArray(f) ? f : [];
-  } catch (e) { return []; }
+  let w = inputNode && getWidget(inputNode, "state");
+  if (w) {
+    try {
+      const state = JSON.parse(w?.value || '{"focus":[]}');
+      return Array.isArray(state.focus) ? state.focus : [];
+    } catch (e) { return []; }
+  } else {
+    // TODO: deprecated / remove
+    w = inputNode && getWidget(inputNode, "focus");
+    try {
+      const f = JSON.parse(w?.value || "[]");
+      return Array.isArray(f) ? f : [];
+    } catch (e) { return []; }
+  }
 }
 
 function setFocus(node, list) {
   const inputNode = findInputNode(node);
-  const w = inputNode && getWidget(inputNode, "focus");
-  if (w) w.value = JSON.stringify(list);
+  if (inputNode) {
+    let w = getWidget(inputNode, "state");
+    if (w) {
+      try {
+        const state = JSON.parse(w?.value || '{}');
+        state.focus = list;
+        w.value = JSON.stringify(state,null,2);
+      } catch (e) {console.log(e)}
+    } else {
+      // TODO: deprecated / remove
+      w = getWidget(inputNode, "focus");
+      if (w) w.value = JSON.stringify(list);
+    }
+  }
   node.csRender();
 }
 
@@ -133,10 +161,13 @@ function markPending(node) {
 function requestVariation(node, label, queue) {
   const inputNode = findInputNode(node);
   if (!inputNode) { alert("No Callsheet Text Input node found"); return; }
-  updateJsonWidget(inputNode, "variation_requests", (req) => {
+  updateJsonWidget(inputNode, "state", (s) => {
+    if (s.variation_requests === undefined)
+      s.variation_requests = {};
+    const req = s.variation_requests;
     (req[label] = req[label] || []).push(
       Math.floor(Math.random() * 0xffffffff));
-  });
+  }, '{"variation_requests":{}}');
   if (queue) app.queuePrompt(0);
   else markPending(node);
 }
@@ -144,7 +175,11 @@ function requestVariation(node, label, queue) {
 function selectVariation(node, asset, key) {
   const inputNode = findInputNode(node);
   if (!inputNode) { alert("No Callsheet Text Input node found"); return; }
-  updateJsonWidget(inputNode, "selections", (s) => { s[asset.label] = key; });
+  updateJsonWidget(inputNode, "state", (s) => {
+    if (s.selections === undefined)
+      s.selections = {};
+    s.selections[asset.label] = key;
+  }, '{"selections":{}}' );
   asset.selected = key;
   markPending(node);
 }
@@ -157,12 +192,15 @@ async function clearStore(node, body, label, dropSeed) {
   if (dropSeed != null) {
     const inputNode = findInputNode(node);
     if (inputNode) {
-      updateJsonWidget(inputNode, "variation_requests", (req) => {
+      updateJsonWidget(inputNode, "state", (s) => {
+        if (s.variation_requests === undefined)
+          s.variation_requests = {};
+        const req = s.variation_requests;
         if (req[label]) {
           req[label] = req[label].filter((s) => s !== dropSeed);
           if (!req[label].length) delete req[label];
         }
-      });
+      }, '{"variation_requests":{}}');
     }
   }
   markPending(node);

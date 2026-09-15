@@ -27,11 +27,17 @@ export function findInputNode(node) {
   return app.graph.getNodeById(link.origin_id);
 }
 
-export function updateJsonWidget(node, name, fn) {
+export function updateJsonWidget(node, name, fn, def = "{}") {
   const w = getWidget(node, name);
   if (!w) return false;
   let obj = {};
-  try { obj = JSON.parse(w.value || "{}"); } catch (e) {}
+  try {
+    const json = w.value || def;
+    obj = JSON.parse(json);
+  } catch (e) {
+    alert('input widget state failed to parse: ' + e);
+    throw e;
+  }
   fn(obj);
   w.value = JSON.stringify(obj);
   return true;
