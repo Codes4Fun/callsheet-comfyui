@@ -198,7 +198,7 @@ def _build_pipeline_candidates(pipelines, items, selected, focus_list):
                 desc = ", ".join(
                     f"{f}={'on' if v else 'off'}"
                     for f, v in zip(uniform, active))
-                print(f"[CallsheetPipeline pass {passno}] uniform_flags: "
+                print(f"[Callsheet pass {passno}] uniform_flags: "
                     f"emitting group ({desc}); {grouped} job(s) from "
                     f"other groups deferred to a later pass")
             candidates = kept

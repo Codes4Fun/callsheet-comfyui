@@ -5,7 +5,7 @@ from .pipeline import (CallsheetPipelineBasic, CallsheetImageRefs,
                        CallsheetPipeline, CallsheetPipelineTester)
 from .flags import CallsheetFlag
 from .store_nodes import (CallsheetStoreImages, CallsheetStoreVideos,
-                          CallsheetStoreAudio)
+                          CallsheetStoreAudio, CallsheetStore)
 from .inject_nodes import (CallsheetInjectImage, CallsheetInjectVideo,
                            CallsheetInjectAudio)
 from .embed import CallsheetEmbeddedImage
@@ -38,6 +38,7 @@ NODE_CLASS_MAPPINGS = {
     "CallsheetStoreImages": CallsheetStoreImages,
     "CallsheetStoreVideos": CallsheetStoreVideos,
     "CallsheetStoreAudio": CallsheetStoreAudio,
+    "CallsheetStore": CallsheetStore,
     "CallsheetInjectImage": CallsheetInjectImage,
     "CallsheetInjectVideo": CallsheetInjectVideo,
     "CallsheetInjectAudio": CallsheetInjectAudio,
@@ -72,6 +73,7 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "CallsheetStoreImages": "Callsheet Store Images",
     "CallsheetStoreVideos": "Callsheet Store Videos",
     "CallsheetStoreAudio": "Callsheet Store Audio",
+    "CallsheetStore": "Callsheet Store",
     "CallsheetInjectImage": "Callsheet Inject Image",
     "CallsheetInjectVideo": "Callsheet Inject Video",
     "CallsheetInjectAudio": "Callsheet Inject Audio",
