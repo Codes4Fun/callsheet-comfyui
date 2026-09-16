@@ -29,10 +29,10 @@ class CallsheetPipelineBasic:
             "after_3": ("CS_ITEMS",),
         }}
 
-    RETURN_TYPES = ("CS_JOB", "STRING", "STRING", "INT", "INT", "INT",
-                    "INT", "INT", "CS_FLAGS", "CS_REFS")
-    RETURN_NAMES = ("job", "prompt", "negative", "width", "height", "length",
-                    "fps", "seed", "flags", "refs")
+    RETURN_TYPES = ("CS_JOB", "INT", "STRING", "STRING", "INT", "INT", "INT",
+                    "INT", "CS_FLAGS", "CS_REFS")
+    RETURN_NAMES = ("job", "fps", "prompt", "negative", "width", "height",
+                    "length", "seed", "flags", "refs")
     OUTPUT_IS_LIST = tuple([True] * 29)
     FUNCTION = "run"
     CATEGORY = "callsheet"
@@ -134,7 +134,7 @@ class CallsheetVideoAudioRefs:
         }}
 
     RETURN_TYPES = tuple([f"AUDIO" for _ in range(MAX_VIDEO_REFS)])
-    RETURN_NAMES = tuple([f"video_auido_ref_{i}" for i in range(MAX_VIDEO_REFS)])
+    RETURN_NAMES = tuple([f"video_audio_ref_{i}" for i in range(MAX_VIDEO_REFS)])
     # OUTPUT_IS_LIST = tuple([True] * MAX_VIDEO_REFS)
     FUNCTION = "run"
     CATEGORY = "callsheet"

@@ -12,18 +12,18 @@ from .binaries import FFMPEG, probe
 
 FORMAT_PRESETS = {
     # name: (extension, video args, browser_playable)
-    "h264": (".mp4",
+    "mp4_h264": (".mp4",
              ["-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "19"],
              True),
-    "h264_allintra": (".mp4",
+    "mp4_h264_allintra": (".mp4",
                       ["-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "17",
                        "-g", "1", "-tune", "fastdecode"],
                       True),
-    "prores": (".mov",
+    "mov_prores": (".mov",
                ["-c:v", "prores_ks", "-profile:v", "3",
                 "-pix_fmt", "yuv422p10le"],
                False),
-    "ffv1_lossless": (".mkv",
+    "mkv_ffv1_lossless": (".mkv",
                       ["-c:v", "ffv1", "-level", "3"],
                       False),
 }
