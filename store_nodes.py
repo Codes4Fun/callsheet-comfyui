@@ -9,6 +9,7 @@ from .media import (FORMAT_PRESETS, AUDIO_CODEC_ARGS, AUDIO_FORMAT_PRESETS,
 from .store import STORE_DIR, register, unresolved
 from .config import STORE_SUBFOLDER
 from .binaries import FFMPEG
+from . import runstate
 
 
 def _check_kinds(job, expected, node_name):
@@ -67,6 +68,7 @@ class CallsheetStoreImages:
                 "seed": j["seed"], "kind": "image", "filename": filename,
                 "subfolder": STORE_SUBFOLDER, "type": "output"})
             acks.append(j["key"])
+        runstate.report_received(len(job))
         return (acks,)
 
 
@@ -176,6 +178,7 @@ class CallsheetStoreVideos:
                 "poster": poster, "preview": preview, "filename": master,
                 "subfolder": STORE_SUBFOLDER, "type": "output"})
             acks.append(j["key"])
+        runstate.report_received(len(job))
         return (acks,)
 
 
@@ -223,4 +226,5 @@ class CallsheetStoreAudio:
                 "has_audio": True, "poster": poster, "filename": master,
                 "subfolder": STORE_SUBFOLDER, "type": "output"})
             acks.append(j["key"])
+        runstate.report_received(len(job))
         return (acks,)

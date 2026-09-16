@@ -1,112 +1,10 @@
 import os
-from collections import defaultdict
 
-from .config import MAX_REFS, MAX_AUDIO_REFS, MAX_VIDEO_REFS
-from .media import (load_video_last_frame, load_video_frames,
-                    load_store_audio_window, video_frame_info)
-from .resolve import collect_candidates
-from .store import (VARIATION_STORE, load_store_image, load_store_audio)
-from .trimspec import parse_spec, resolve_window
+from .config import MAX_RESOLUTION, MAX_REFS, MAX_AUDIO_REFS, MAX_VIDEO_REFS
 from . import runstate
 
 
-def _pipeline_build_jobs(candidates):
-    jobs = []
-    for c in candidates:
-        item = c["item"]
-        pending = c["pending"]
-
-        cont_rec = c["cont_rec"]
-        if cont_rec is not None:
-            cont_frame = (load_video_last_frame(cont_rec)
-                            if cont_rec.get("kind") == "video"
-                            else load_store_image(cont_rec))
-        else:
-            cont_frame = None
-
-        tgt_rec = c["tgt_rec"]
-        if tgt_rec is not None:
-            tgt_frame = (load_video_first_frame(tgt_rec)
-                            if tgt_rec.get("kind") == "video"
-                            else load_store_image(tgt_rec))
-        else:
-            tgt_frame = None
-
-        ref_imgs = [load_store_image(VARIATION_STORE[k])
-                    for k in c["ref_keys"]]
-        while len(ref_imgs) < MAX_REFS:
-            ref_imgs.append(None)    # loud failure if consumed
-        aref_audio = [load_store_audio(VARIATION_STORE[k])
-                        for k in c["aref_keys"]]
-        while len(aref_audio) < MAX_AUDIO_REFS:
-            aref_audio.append(None)
-
-        vref_frames, vref_audio = [], []
-        for k, (sf, ef), src_fps in c["vref_windows"]:
-            rec = VARIATION_STORE[k]
-            vref_frames.append(load_video_frames(rec, (sf, ef)))
-            vref_audio.append(
-                load_store_audio_window(rec, sf / src_fps,
-                                        ef / src_fps)
-                if rec.get("has_audio") else None)
-        while len(vref_frames) < MAX_VIDEO_REFS:
-            vref_frames.append(None)
-            vref_audio.append(None)
-
-        cv_frames = cv_audio = None
-        if c["cv_window"]:
-            k, (sf, ef), src_fps = c["cv_window"]
-            rec = VARIATION_STORE[k]
-            cv_frames = load_video_frames(rec, (sf, ef))
-            if rec.get("has_audio"):
-                cv_audio = load_store_audio_window(
-                    rec, sf / src_fps, ef / src_fps)
-
-        tv_frames = tv_audio = None
-        if c["tv_window"]:
-            k, (sf, ef), src_fps = c["tv_window"]
-            rec = VARIATION_STORE[k]
-            tv_frames = load_video_frames(rec, (sf, ef))
-            if rec.get("has_audio"):
-                tv_audio = load_store_audio_window(
-                    rec, sf / src_fps, ef / src_fps)
-
-        refs = {}
-        for i in range(MAX_REFS):
-            refs[f"ref_{i}"] = ref_imgs[i]
-        for i in range(MAX_AUDIO_REFS):
-            refs[f"audio_ref_{i}"] = aref_audio[i]
-        for i in range(MAX_VIDEO_REFS):
-            refs[f"video_ref_{i}"] = vref_frames[i]
-            refs[f"video_audio_ref_{i}"] = vref_audio[i]
-        refs["continue_frame"] = cont_frame
-        refs["continue_video"] = cv_frames
-        refs["continue_video_audio"] = cv_audio
-        refs["target_frame"] = tgt_frame
-        refs["target_video"] = tv_frames
-        refs["target_video_audio"] = tv_audio
-
-        for seed, key in pending:
-            job = {}
-            job["prompt"] = item["prompt"]
-            job["negative"] = item["negative"]
-            job["width"] = item["width"]
-            job["height"] = item["height"]
-            job["length"] = item["length"]
-            job["fps"] = item["fps"]
-            job["seed"] = seed
-            job["job"] = {"key": key, "label": item["label"],
-                                "index": item["index"], "seed": seed,
-                                "kind": item.get("type")}
-            job["flags"] = c["flags"]
-            job["refs"] = refs
-            jobs.append(job)
-
-    return jobs
-
-
-def _pipeline_build_jobs_for_slots(candidates, slot_names):
-    jobs = _pipeline_build_jobs(candidates)
+def _map_jobs_to_slots(jobs, slot_names):
     out = {n: [] for n in slot_names}
     for job in jobs:
         for s in slot_names:
@@ -144,7 +42,6 @@ class CallsheetPipelineBasic:
         return float("nan")   # store contents change between passes
 
     def run(self, parsed, pipeline, **after):
-        print(f"len(parsed) {len(parsed)}")
         parsed = parsed[0]
         pipeline_name = pipeline[0]
 
@@ -152,16 +49,13 @@ class CallsheetPipelineBasic:
         if not pipeline_name in pipelines:
             raise ValueError(
                 f"CallsheetPipeline configuration errors:\n  - '{pipeline_name}' not in spec!")
-
-        print("[CallsheetPipeline] using pipeline spec")
         pipeline = pipelines[pipeline_name]
-
-        candidates = pipeline["candidates"]
 
         # ------------------------------------------------------------------
         # Phase 4: decode inputs, emit
         # ------------------------------------------------------------------
-        cols = _pipeline_build_jobs_for_slots(candidates, self.RETURN_NAMES)
+        jobs = pipeline["jobs"]
+        cols = _map_jobs_to_slots(jobs, self.RETURN_NAMES)
 
         passno = runstate.current_pass()
         deferred = pipeline["deferred"]
@@ -267,14 +161,14 @@ class CallsheetFirstLastRefs:
     def run(self, refs):
 
         first_frames = refs["continue_video"]
-        if first_frames:
+        if not first_frames is None:
             first_audio = refs["continue_video_audio"]
         else:
             first_frames = refs["continue_frame"]
             first_audio = None
         
         last_frames = refs["target_video"]
-        if last_frames:
+        if not last_frames is None:
             last_audio = refs["target_video_audio"]
         else:
             last_frames = refs["target_frame"]
@@ -358,7 +252,6 @@ class CallsheetPipeline:
 
     def run(self, parsed, pipeline_filter, allowed_flags, uniform_flags,
             max_jobs_per_pass, **after):
-        print(f"len(parsed) {len(parsed)}")
         parsed = parsed[0]
         pipeline_filter = pipeline_filter[0]
 
@@ -366,15 +259,13 @@ class CallsheetPipeline:
         if not pipeline_filter in pipelines:
             raise ValueError(
                 "CallsheetPipeline configuration errors:\n  - No Pipeline Spec!")
-        print("[CallsheetPipeline] using parsed pipeline spec")
         pipeline = pipelines[pipeline_filter]
-
-        candidates = pipeline["candidates"]
 
         # ------------------------------------------------------------------
         # Phase 4: decode inputs, emit
         # ------------------------------------------------------------------
-        cols = _pipeline_build_jobs_for_slots(candidates, self.RETURN_NAMES)
+        jobs = pipeline["jobs"]
+        cols = _map_jobs_to_slots(jobs, self.RETURN_NAMES)
 
         passno = runstate.current_pass()
         deferred = pipeline["deferred"]
@@ -384,3 +275,115 @@ class CallsheetPipeline:
         runstate.report(len(cols["job"]), deferred)
 
         return tuple(cols[n] for n in self.RETURN_NAMES)
+
+
+class CallsheetPipelineTester:
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {"required": {
+            "pipeline": ("STRING", {"default":""}),
+            "prompt": ("STRING", {"default":"", "multiline": True}),
+            "width": ("INT", {"default": 1024, "min": 1, "max": MAX_RESOLUTION}),
+            "height": ("INT", {"default": 1024, "min": 1, "max": MAX_RESOLUTION}),
+            "length": ("INT", {"default": 124, "min": 1, "max": MAX_RESOLUTION}),
+            "fps": ("INT", {"default": 24, "min": 1, "max": 120}),
+            "seed": ("INT", {"default": 0, "min": 0, "max": 0xFFFFFFFFFFFFFFFF}),
+            "flags": ("STRING", {"default":""}),
+        }, "optional": {
+            "ref_0": ("IMAGE",),
+            "ref_1": ("IMAGE",),
+            "ref_2": ("IMAGE",),
+            "ref_3": ("IMAGE",),
+            "ref_4": ("IMAGE",),
+            "ref_5": ("IMAGE",),
+            "ref_6": ("IMAGE",),
+            "ref_7": ("IMAGE",),
+            "audio_ref_0": ("AUDIO",),
+            "audio_ref_1": ("AUDIO",),
+            "audio_ref_2": ("AUDIO",),
+            "audio_ref_3": ("AUDIO",),
+            "video_ref_0": ("IMAGE",),
+            "video_ref_1": ("IMAGE",),
+            "video_ref_2": ("IMAGE",),
+            "video_ref_3": ("IMAGE",),
+            "video_audio_ref_0": ("AUDIO",),
+            "video_audio_ref_1": ("AUDIO",),
+            "video_audio_ref_2": ("AUDIO",),
+            "video_audio_ref_3": ("AUDIO",),
+            "continue_frame": ("IMAGE",),
+            "continue_video": ("IMAGE",),
+            "continue_video_audio": ("AUDIO",),
+            "target_frame": ("IMAGE",),
+            "target_video": ("IMAGE",),
+            "target_video_audio": ("AUDIO",),
+        }}
+
+    RETURN_TYPES = ("CS_PARSED",)
+    RETURN_NAMES = ("parsed",)
+    FUNCTION = "test"
+    CATEGORY = "callsheet"
+
+    @classmethod
+    def IS_CHANGED(cls, **kwargs):
+        return float("nan")
+
+    def test(self, pipeline, prompt, width, height, length, fps, seed, flags,
+             ref_0 = None, ref_1 = None, ref_2 = None, ref_3 = None,
+             ref_4 = None, ref_5 = None, ref_6 = None, ref_7 = None,
+             audio_ref_0 = None, audio_ref_1 = None,
+             audio_ref_2 = None, audio_ref_3 = None,
+             video_ref_0 = None, video_ref_1 = None,
+             video_ref_2 = None, video_ref_3 = None,
+             video_audio_ref_0 = None, video_audio_ref_1 = None,
+             video_audio_ref_2 = None, video_audio_ref_3 = None,
+             continue_frame = None, continue_video = None, continue_video_audio = None,
+             target_frame = None, target_video = None, target_video_audio = None ):
+        _flags = [f.strip() for f in flags.split(",") if f.strip()]
+        parsed = {
+            'pipelines': {
+                pipeline: {
+                    'jobs':[{
+                        'prompt': prompt,
+                        'negative': '',
+                        'width': width,
+                        'height': height,
+                        'length': length,
+                        'fps': fps,
+                        'seed': seed,
+                        'job': {},
+                        'flags': _flags,
+                        'refs': {
+                            'ref_0': ref_0,
+                            'ref_1': ref_1,
+                            'ref_2': ref_2,
+                            'ref_3': ref_3,
+                            'ref_4': ref_4,
+                            'ref_5': ref_5,
+                            'ref_6': ref_6,
+                            'ref_7': ref_7,
+                            'audio_ref_0': audio_ref_0,
+                            'audio_ref_1': audio_ref_1,
+                            'audio_ref_2': audio_ref_2,
+                            'audio_ref_3': audio_ref_3,
+                            'video_ref_0': video_ref_0,
+                            'video_audio_ref_0': video_audio_ref_0,
+                            'video_ref_1': video_ref_1,
+                            'video_audio_ref_1': video_audio_ref_1,
+                            'video_ref_2': video_ref_2,
+                            'video_audio_ref_2': video_audio_ref_2,
+                            'video_ref_3': video_ref_3,
+                            'video_audio_ref_3': video_audio_ref_3,
+                            'continue_frame': continue_frame,
+                            'continue_video': continue_video,
+                            'continue_video_audio': continue_video_audio,
+                            'target_frame': target_frame,
+                            'target_video': target_video,
+                            'target_video_audio': target_video_audio
+                        }
+                    }],
+                    'deferred': 0
+                }
+            }
+        }
+        return (parsed,)
+

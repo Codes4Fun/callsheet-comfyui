@@ -27,22 +27,14 @@ ITEM_ONLY_KEYS = {"label", "ref", "audio_ref", "video_ref", "source",
 DEFAULTABLE_KEYS = KNOWN_KEYS - ITEM_ONLY_KEYS
 
 
-def validate_pipeline_types(pipelines):
-    pipeline_types = {}
-    for name in pipelines:
-        tasks = pipelines[name]["tasks"]
-        for task in tasks:
-            t = tasks[task]
-            if t and t not in PIPELINE_TYPES:
-                raise ValueError(
-                    f"allowed_pipelines: unknown type '{t}' for '{name}' "
-                    f"(use {', '.join(PIPELINE_TYPES)})")
-            pipeline_types[task] = t or None
-    return pipeline_types
-
-
-def pipeline_tasks(pipelines):
+def map_pipeline_tasks(pipelines):
     tasks = {}
+    def get_spec(cur, names, default_value):
+        for name in names:
+            if not name in cur:
+                return default_value
+            cur = cur[name]
+        return cur
     for pipeline_name in pipelines:
         pipeline = pipelines[pipeline_name]
         pipeline_tasks = pipeline["tasks"]
@@ -50,32 +42,17 @@ def pipeline_tasks(pipelines):
             task_type = pipeline_tasks[task]
             if task_type and task_type not in PIPELINE_TYPES:
                 raise ValueError(
-                    f"allowed_pipelines: unknown type '{task_type}' for '{pipeline_name}' "
+                    f"pipeline_tasks: unknown type '{task_type}' for '{pipeline_name}' "
                     f"(use {', '.join(PIPELINE_TYPES)})")
             tasks[task] = {
                 "type": task_type or None,
-                "size_step": pipeline["size"]["step"] if "size" in pipeline and "step" in pipeline["size"] else 1,
-                "length_step": pipeline["length"]["step"] if "length" in pipeline and "step" in pipeline["length"] else 1,
-                "length_offset": pipeline["length"]["offset"] if "length" in pipeline and "offset" in pipeline["length"] else 0,
+                "frame_rate": get_spec(pipeline, ['frame_rate'], 0),
+                "sample_rate": get_spec(pipeline, ['sample_rate'], 0),
+                "size_step": get_spec(pipeline, ['size','step'], 1),
+                "length_step": get_spec(pipeline, ['length','step'], 1),
+                "length_offset": get_spec(pipeline, ['length','offset'], 0),
             }
     return tasks
-
-
-def parse_pipeline_types(spec):
-    """'name:type, name:type, ...' -> {name: type-or-None}."""
-    pipeline_types = {}
-    for tok in spec.split(","):
-        tok = tok.strip()
-        if not tok:
-            continue
-        name, _, t = tok.partition(":")
-        name, t = name.strip(), t.strip().lower()
-        if t and t not in PIPELINE_TYPES:
-            raise ValueError(
-                f"allowed_pipelines: unknown type '{t}' for '{name}' "
-                f"(use {', '.join(PIPELINE_TYPES)})")
-        pipeline_types[name] = t or None
-    return pipeline_types
 
 
 def _looks_like_pure_headers(raw):
@@ -124,7 +101,12 @@ def _check_keys(headers, allowed, tag, errors):
 def _parse_size(val, tag, errors, default_step=1):
     m = _SIZE_WXH.match(val)
     if m:
-        return int(m.group(1)), int(m.group(2))
+        w = int(m.group(1))
+        h = int(m.group(2))
+        if default_step != 1:
+            w = max(default_step, round(w / default_step) * default_step)
+            h = max(default_step, round(h / default_step) * default_step)
+        return w, h
     m = _SIZE_MP.match(val)
     if m:
         mp = float(m.group(1))
@@ -139,7 +121,7 @@ def _parse_size(val, tag, errors, default_step=1):
     return None
 
 
-def _parse_length(val, fps, tag, errors):
+def _parse_length(val, rate, tag, errors, default_step=1, default_offset=0):
     v = str(val).strip().lower()
     if v.endswith("s"):
         try:
@@ -147,15 +129,22 @@ def _parse_length(val, fps, tag, errors):
         except ValueError:
             errors.append(f"{tag}: bad length '{val}'")
             return 0
-        if not fps:
-            errors.append(f"{tag}: length in seconds requires an 'fps' "
+        if not rate:
+            errors.append(f"{tag}: length in seconds requires a 'rate' "
                           f"header or default")
             return 0
-        return max(1, round(sec * fps))
+        if default_step != 1:
+            return max(1, round(((sec * rate) - default_offset) / default_step)
+                        * default_step + default_offset )
+        return max(1, round(sec * rate))
     try:
-        return int(v)
+        length = int(v)
+        if default_step != 1:
+            length = max(1, round((length - default_offset) / default_step)
+                        * default_step + default_offset )
+        return length
     except ValueError:
-        errors.append(f"{tag}: 'length' must be frames (int) or seconds "
+        errors.append(f"{tag}: 'length' must be frames/samples (int) or seconds "
                       f"like '5s'")
         return 0
 
@@ -199,8 +188,7 @@ def parse_and_validate(text, pipelines, strict, base_seed,
     errors, defaults, items = [], {}, []
     seen_labels = set()
 
-    pipeline_types = validate_pipeline_types(pipelines)
-    tasks = pipeline_tasks(pipelines)
+    tasks = map_pipeline_tasks(pipelines)
 
     index = 0
     for bi, raw in enumerate(blocks):
@@ -282,28 +270,34 @@ def parse_and_validate(text, pipelines, strict, base_seed,
             errors.append(f"{tag}: missing '{key}' and no default provided")
             return None
 
-        pipeline = (headers.get("pipeline", defaults.get("pipeline"))
-                    if injected else resolve("pipeline"))
-        #ptype = tasks.get(pipeline) if pipeline else None
+        ptype = None
+        default_fps = 0
+        default_hz = 0
+        default_size_step = 1
+        default_length_step = 1
+        default_length_offset = 0
+
+        # TODO: why does pipeline need to be set for inject?
+        #pipeline = (headers.get("pipeline", defaults.get("pipeline"))
+        #            if injected else resolve("pipeline"))
+        pipeline = None if injected else resolve("pipeline")
         if pipeline is not None:
             task = tasks.get(pipeline)
-            ptype = task["type"] if task else None
-            if strict:
-                if pipeline not in tasks:
-                    errors.append(
-                        f"{tag}: pipeline '{pipeline}' is not declared in "
-                        f"allowed_pipelines (strict mode requires "
-                        f"'name:type' declarations)")
-                elif ptype is None:
+            if pipeline not in tasks:
+                errors.append(
+                    f"{tag}: pipeline '{pipeline}' is not declared in "
+                    f"pipeline_specs")
+            else:
+                ptype = task["type"]
+                if ptype is None:
                     errors.append(
                         f"{tag}: pipeline '{pipeline}' is declared without "
                         f"a type (strict mode requires 'name:type')")
-            elif tasks and pipeline not in tasks:
-                errors.append(f"{tag}: unknown pipeline '{pipeline}' "
-                              f"(declared: "
-                              f"{', '.join(sorted(tasks))})")
-        else:
-            ptype = None
+                default_fps = task["frame_rate"]
+                default_hz = task["sample_rate"]
+                default_size_step = task["size_step"]
+                default_length_step = task["length_step"]
+                default_length_offset = task["length_offset"]
 
         # ---- flags ------------------------------------------------------------
         flags_raw = headers.get("flags", defaults.get("flags", ""))
@@ -360,14 +354,14 @@ def parse_and_validate(text, pipelines, strict, base_seed,
             if "width" in headers or "height" in headers:
                 errors.append(f"{tag}: use either 'size' or "
                               f"'width'/'height', not both")
-            d = _parse_size(headers["size"], tag, errors)
+            d = _parse_size(headers["size"], tag, errors, default_size_step)
             if d:
                 width, height = d
         elif "width" in headers or "height" in headers:
             width = int_prop("width", dims_required)
             height = int_prop("height", dims_required)
         elif "size" in defaults:
-            d = _parse_size(defaults["size"], tag, errors)
+            d = _parse_size(defaults["size"], tag, errors, default_size_step)
             if d:
                 width, height = d
         else:
@@ -382,21 +376,36 @@ def parse_and_validate(text, pipelines, strict, base_seed,
                                   f"image-typed pipeline")
             fps, length = 0, 0   # inherited defaults silently ignored
         else:
-            fps_raw = headers.get("fps", defaults.get(
-                "fps", None if strict else widget_defaults.get("fps")))
-            fps = 0
-            if fps_raw is not None:
-                try:
-                    fps = int(fps_raw)
-                    if fps <= 0:
-                        raise ValueError
-                except ValueError:
-                    errors.append(f"{tag}: 'fps' must be a positive "
-                                  f"integer")
-                    fps = 0
+            default_rate = default_fps if ptype == "video" else default_hz
+            if default_rate > 0:
+                if fps not in headers:
+                    fps = default_rate
+                else:
+                    fps_raw = headers.get("fps", "0")
+                    try:
+                        fps = int(fps_raw)
+                        if fps <= 0:
+                            raise ValueError
+                    except ValueError:
+                        errors.append(f"{tag}: 'fps' must be a positive "
+                                    f"integer")
+                        fps = default_rate
+            else:
+                fps_raw = headers.get("fps", defaults.get(
+                    "fps", None if strict else widget_defaults.get("fps")))
+                fps = 0
+                if fps_raw is not None:
+                    try:
+                        fps = int(fps_raw)
+                        if fps <= 0:
+                            raise ValueError
+                    except ValueError:
+                        errors.append(f"{tag}: 'fps' must be a positive "
+                                    f"integer")
+                        fps = 0
             length = _parse_length(
-                headers.get("length", defaults.get("length", "0")),
-                fps, tag, errors)
+                headers.get("length", defaults.get("length", "1")),
+                fps, tag, errors, default_length_step, default_length_offset)
             if ptype == "video":
                 if length <= 0:
                     errors.append(f"{tag}: video items require a "
@@ -406,8 +415,7 @@ def parse_and_validate(text, pipelines, strict, base_seed,
 
         # ---- seed: plain base_seed, stable under reordering -----------------
         try:
-            seed = int(headers.get("seed",
-                                   defaults.get("seed", base_seed)))
+            seed = int(headers.get("seed", defaults.get("seed", base_seed)))
         except ValueError:
             errors.append(f"{tag}: 'seed' must be an integer")
             seed = 0

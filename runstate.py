@@ -3,7 +3,7 @@ import uuid
 from server import PromptServer
 
 _SETTINGS = {"auto_continue": True, "max_passes": 16}
-_RUNS = {}      # prompt_id -> {"emitted","deferred","requeued","capped"}
+_RUNS = {}      # prompt_id -> {"emitted","deferred","received","requeued","capped"}
 _PASS_OF = {}   # prompt_id -> pass number (1 = user-initiated run)
 
 
@@ -29,7 +29,7 @@ def _run(pid):
     if pid not in _RUNS:
         while len(_RUNS) > 32:          # prune old runs
             _RUNS.pop(next(iter(_RUNS)))
-        _RUNS[pid] = {"emitted": 0, "deferred": 0,
+        _RUNS[pid] = {"emitted": 0, "deferred": 0, "received": 0,
                       "requeued": False, "capped": False}
     return _RUNS[pid]
 
@@ -46,20 +46,33 @@ def report(emitted, deferred):
     r["deferred"] += deferred
     if r["requeued"] or not _SETTINGS["auto_continue"]:
         return
-    if r["emitted"] > 0 and r["deferred"] > 0:
-        if current_pass(pid) >= _SETTINGS["max_passes"]:
-            if not r["capped"]:
-                r["capped"] = True
-                print(f"[Callsheet] max_passes "
-                      f"({_SETTINGS['max_passes']}) reached with "
-                      f"{r['deferred']} item(s) still deferred; "
-                      f"queue again to continue.")
-            return
-        r["requeued"] = True
-        _requeue(pid)
-        print(f"[Callsheet] pass {current_pass(pid) + 1} queued "
-              f"({r['emitted']} job(s) this pass, "
-              f"{r['deferred']} deferred)")
+
+
+def report_received(received):
+    pid = _current_prompt_id()
+    r = _run(pid)
+    r["received"] += received
+    if r["received"] > r["emitted"]:
+        raise RuntimeError("callsheet report_received: received more than emitted!")
+    if r["requeued"] or not _SETTINGS["auto_continue"]:
+        return
+    if r["received"] == r["emitted"]:
+        if r["deferred"] > 0:
+            if current_pass(pid) >= _SETTINGS["max_passes"]:
+                if not r["capped"]:
+                    r["capped"] = True
+                    print(f"[Callsheet] max_passes "
+                        f"({_SETTINGS['max_passes']}) reached with "
+                        f"{r['deferred']} item(s) still deferred; "
+                        f"queue again to continue.")
+                return
+            r["requeued"] = True
+            _requeue(pid)
+            print(f"[Callsheet] pass {current_pass(pid) + 1} queued "
+                f"({r['emitted']} job(s) this pass, "
+                f"{r['deferred']} deferred)")
+        else:
+            print("[Callsheet] all passes completed")
 
 
 def deferred_pending():

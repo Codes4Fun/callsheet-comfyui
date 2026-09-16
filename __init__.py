@@ -2,7 +2,7 @@ from .input_node import (CallsheetTextInput, CallsheetTextInputB)
 from .pipeline import (CallsheetPipelineBasic, CallsheetImageRefs,
                        CallsheetAudioRefs, CallsheetVideoImageRefs,
                        CallsheetVideoAudioRefs, CallsheetFirstLastRefs,
-                       CallsheetPipeline)
+                       CallsheetPipeline, CallsheetPipelineTester)
 from .flags import CallsheetFlag
 from .store_nodes import (CallsheetStoreImages, CallsheetStoreVideos,
                           CallsheetStoreAudio)
@@ -31,6 +31,7 @@ NODE_CLASS_MAPPINGS = {
     "CallsheetVideoAudioRefs": CallsheetVideoAudioRefs,
     "CallsheetFirstLastRefs": CallsheetFirstLastRefs,
     "CallsheetPipeline": CallsheetPipeline,
+    "CallsheetPipelineTester": CallsheetPipelineTester,
     "CallsheetFlag": CallsheetFlag,
     "CallsheetJobRouter": CallsheetJobRouter,
     "CallsheetAudioShift": CallsheetAudioShift,
@@ -64,6 +65,7 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "CallsheetVideoAudioRefs": "Callsheet Video Audio Refs",
     "CallsheetFirstLastRefs": "Callsheet First/Last Refs",
     "CallsheetPipeline": "Callsheet Pipeline",
+    "CallsheetPipelineTester": "Callsheet Pipeline Tester",
     "CallsheetFlag": "Callsheet Flag",
     "CallsheetJobRouter": "Callsheet Job Router",
     "CallsheetAudioShift": "Callsheet Audio Shift",

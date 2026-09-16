@@ -1,4 +1,5 @@
 from .store import VARIATION_STORE, variation_key
+from .trimspec import parse_spec, resolve_window
 from . import runstate
 
 
@@ -272,15 +273,12 @@ def collect_candidates(items, selections, focus):
 
         # ---- flags: pipeline name + user + auto ------------------------
         auto = [pipeline] if pipeline else []
-        auto += [f"ref_{i + 1}" for i, k in enumerate(ref_keys) if k]
-        auto += [f"audio_ref_{i + 1}"
-                    for i, k in enumerate(aref_keys) if k]
+        auto += [f"ref_{i}" for i, k in enumerate(ref_keys) if k]
+        auto += [f"audio_ref_{i}" for i, k in enumerate(aref_keys) if k]
         if cont_key:
             auto.append("continue_frame")
-        auto += [f"video_ref_{i + 1}"
-                    for i in range(len(vref_pairs))]
-        auto += [f"video_audio_ref_{i + 1}"
-                    for i, (k, _) in enumerate(vref_pairs)
+        auto += [f"video_ref_{i}" for i in range(len(vref_pairs))]
+        auto += [f"video_audio_ref_{i}" for i, (k, _) in enumerate(vref_pairs)
                     if VARIATION_STORE[k].get("has_audio")]
         if cv_pair:
             auto.append("continue_video")
