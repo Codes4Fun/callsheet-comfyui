@@ -151,6 +151,9 @@ class CallsheetConcatVideos:
         by_label = {it["label"]: it for it in items}
         resolver = build_resolver(items, selections)
 
+        if not labels:
+            return self._notice("no labels specified")
+
         specs = []
         for entry in labels.split(","):
             entry = entry.strip()
