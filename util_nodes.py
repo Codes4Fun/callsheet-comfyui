@@ -448,7 +448,7 @@ class CallsheetLoRATagLoader(LoraLoader):
             "required": {
                 "model": ("MODEL", {"tooltip": "The diffusion model the LoRA will be applied to."}),
                 "clip": ("CLIP", {"tooltip": "The CLIP model the LoRA will be applied to."}),
-                "prompt": ("STRING", {"forceInput": True}),
+                "prompt": ("STRING", {"default": "", "multiline": True}),
             }
         }
 
