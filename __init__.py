@@ -16,7 +16,7 @@ from .util_nodes import (CallsheetAudioShift, CallsheetAudioCrossfade,
                          CallsheetAudioTrim, CallsheetAudioPad,
                          CallsheetJobRouter, CallsheetHasValue,
                          CallsheetConcatText, CallsheetTextChain,
-                         CallsheetLoRATagLoader)
+                         CallsheetReplaceBlock, CallsheetLoRATagLoader)
 from . import routes  # noqa: F401  (registers /callsheet/clear)
 
 WEB_DIRECTORY = "./web"
@@ -53,11 +53,12 @@ NODE_CLASS_MAPPINGS = {
     "CallsheetHasValue": CallsheetHasValue,
     "CallsheetConcatText": CallsheetConcatText,
     "CallsheetTextChain": CallsheetTextChain,
+    "CallsheetReplaceBlock": CallsheetReplaceBlock,
     "CallsheetLoRATagLoader": CallsheetLoRATagLoader,
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
-    "CallsheetTextInput": "Callsheet Text Input (DEPRICATED)",
+    "CallsheetTextInput": "Callsheet DEPRECATED",
     "CallsheetTextInputB": "Callsheet Text Input",
     "CallsheetPipelineBasic": "Callsheet Pipeline Basic",
     "CallsheetImageRefs": "Callsheet Image Refs",
@@ -65,7 +66,7 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "CallsheetVideoImageRefs": "Callsheet Video Image Refs",
     "CallsheetVideoAudioRefs": "Callsheet Video Audio Refs",
     "CallsheetFirstLastRefs": "Callsheet First/Last Refs",
-    "CallsheetPipeline": "Callsheet Pipeline",
+    "CallsheetPipeline": "Callsheet DEPRECATED",
     "CallsheetPipelineTester": "Callsheet Pipeline Tester",
     "CallsheetFlag": "Callsheet Flag",
     "CallsheetJobRouter": "Callsheet Job Router",
@@ -88,5 +89,6 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "CallsheetHasValue": "Callsheet Has Value",
     "CallsheetConcatText": "Callsheet Concat Text",
     "CallsheetTextChain": "Callsheet Text Chain",
+    "CallsheetReplaceBlock": "Callsheet Replace Block",
     "CallsheetLoRATagLoader": "Callsheet LoRA Tag Loader"
 }

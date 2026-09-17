@@ -1,8 +1,10 @@
 import torch
 import torchaudio
+import re
 
 from nodes import LoraLoader
-import re
+
+from .config import (ITEM_DELIM, HEADER_DELIM)
 
 
 def _match_check(a, b, node_name):
@@ -439,6 +441,45 @@ class CallsheetTextChain:
         if prefix is None or prefix == "":
             return (text,)
         return (prefix + text,)
+
+
+class CallsheetReplaceBlock:
+    """
+    A callsheet node that finds a block by it's label and replaces it's content.
+    """
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "callsheet": ("STRING", {"forceInput": True}),
+                "label": ("STRING",{"default": ""}),
+                "text": ("STRING", {"multiline": True, "default": ""}),
+            },
+        }
+
+    RETURN_TYPES = ("STRING",)
+    FUNCTION = "replace"
+    CATEGORY = "Callsheet/Text"
+
+    def replace(self, callsheet, label, text):
+        if not label:
+            raise ValueError("CallsheetReplaceBlock: no label set")
+        if not callsheet:
+            raise ValueError("CallsheetReplaceBlock: callsheet empty")
+        blocks = callsheet.split(f"\n{ITEM_DELIM}\n")
+        for i, block in enumerate(blocks):
+            header, _, _ = block.partition(f"\n{HEADER_DELIM}\n")
+            lines = header.splitlines()
+            for line in lines:
+                key, _, value = line.partition(':')
+                if key.strip().lower() != 'label':
+                    continue
+                if value.strip() != label:
+                    continue
+                blocks[i] = text
+                return (f"\n{ITEM_DELIM}\n".join(blocks),)
+        raise ValueError(f"CallsheetReplaceBlock: '{label}' not found in callsheet")
 
 
 class CallsheetLoRATagLoader(LoraLoader):
