@@ -417,9 +417,9 @@ class CallsheetConcatText:
 
 class CallsheetTextChain:
     """
-    A string node that concatenates a multiline text widget with an optional
-    STRING input. If the STRING input is connected, it will prepend the input
-    string to the widget text.
+    A string node that joins multiline text with an optional STRING input.
+    If the STRING input is connected, it will prepend with text, adding a
+    new-line if needed.
     """
 
     @classmethod
@@ -434,18 +434,20 @@ class CallsheetTextChain:
         }
 
     RETURN_TYPES = ("STRING",)
-    FUNCTION = "concatenate_strings"
+    FUNCTION = "join"
     CATEGORY = "Callsheet/Text"
 
-    def concatenate_strings(self, text, prefix=None):
-        if prefix is None or prefix == "":
+    def join(self, text, prefix=None):
+        if not prefix:
             return (text,)
+        if prefix[-1] != '\n':
+            prefix += '\n'
         return (prefix + text,)
 
 
-class CallsheetReplaceBlock:
+class CallsheetBlockPatch:
     """
-    A callsheet node that finds a block by it's label and replaces it's content.
+    A callsheet node that finds a block by it's label and either replaces it with text or inserts text before or after it.
     """
 
     @classmethod
@@ -454,15 +456,16 @@ class CallsheetReplaceBlock:
             "required": {
                 "callsheet": ("STRING", {"forceInput": True}),
                 "label": ("STRING",{"default": ""}),
+                "operation": (["replace","insert before","insert after"],{"default":"replace"}),
                 "text": ("STRING", {"multiline": True, "default": ""}),
             },
         }
 
     RETURN_TYPES = ("STRING",)
-    FUNCTION = "replace"
+    FUNCTION = "apply"
     CATEGORY = "Callsheet/Text"
 
-    def replace(self, callsheet, label, text):
+    def apply(self, callsheet, label, operation, text):
         if not label:
             raise ValueError("CallsheetReplaceBlock: no label set")
         if not callsheet:
@@ -477,7 +480,13 @@ class CallsheetReplaceBlock:
                     continue
                 if value.strip() != label:
                     continue
-                blocks[i] = text
+                match operation:
+                    case "replace":
+                        blocks[i] = text
+                    case "insert before":
+                        blocks.insert(i, text)
+                    case "insert after":
+                        blocks.insert(i + 1, text)
                 return (f"\n{ITEM_DELIM}\n".join(blocks),)
         raise ValueError(f"CallsheetReplaceBlock: '{label}' not found in callsheet")
 
