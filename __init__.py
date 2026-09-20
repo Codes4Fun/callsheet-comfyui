@@ -16,7 +16,9 @@ from .util_nodes import (CallsheetAudioShift, CallsheetAudioCrossfade,
                          CallsheetAudioTrim, CallsheetAudioPad,
                          CallsheetJobRouter, CallsheetHasValue,
                          CallsheetConcatText, CallsheetTextChain,
-                         CallsheetBlockPatch, CallsheetLoRATagLoader)
+                         CallsheetBlockPatch,
+                         CallsheetDialogueHelperB, CallsheetDialogueHelperC,
+                         CallsheetLoRATagLoader)
 from . import routes  # noqa: F401  (registers /callsheet/clear)
 
 WEB_DIRECTORY = "./web"
@@ -54,6 +56,8 @@ NODE_CLASS_MAPPINGS = {
     "CallsheetConcatText": CallsheetConcatText,
     "CallsheetTextChain": CallsheetTextChain,
     "CallsheetBlockPatch": CallsheetBlockPatch,
+    "CallsheetDialogueHelperB": CallsheetDialogueHelperB,
+    "CallsheetDialogueHelperC": CallsheetDialogueHelperC,
     "CallsheetLoRATagLoader": CallsheetLoRATagLoader,
 }
 
@@ -90,5 +94,7 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "CallsheetConcatText": "Callsheet Concat Text",
     "CallsheetTextChain": "Callsheet Text Chain",
     "CallsheetBlockPatch": "Callsheet Block Patch",
+    "CallsheetDialogueHelperB": "Callsheet Dialogue Helper Alt",
+    "CallsheetDialogueHelperC": "Callsheet Dialogue Helper",
     "CallsheetLoRATagLoader": "Callsheet LoRA Tag Loader"
 }

@@ -491,6 +491,300 @@ class CallsheetBlockPatch:
         raise ValueError(f"CallsheetReplaceBlock: '{label}' not found in callsheet")
 
 
+def generate_prompts(template, dialogue):
+    # Split dialogue into lines and discard empty lines
+    dialogue_lines = [line for line in dialogue.strip().split('\n') if line.strip()]
+    
+    # Verify we have an even number of lines
+    if len(dialogue_lines) % 2 != 0:
+        raise ValueError("Dialogue must have an even number of lines")
+    
+    # Extract character names from the first line
+    first_line = dialogue_lines[0]
+    first_char = first_line.split(':')[0].strip()
+    second_char = dialogue_lines[1].split(':')[0].strip()
+    
+    # Calculate number of prompts (pairs of dialogue)
+    num_prompts = len(dialogue_lines) // 2
+    
+    # Generate prompts for each pair
+    prompts = []
+    for i in range(num_prompts):
+        # Get the pair of dialogue lines
+        line1 = dialogue_lines[i*2]
+        line2 = dialogue_lines[i*2 + 1]
+        
+        # Extract character names and dialogue
+        char1, text1 = line1.split(':', 1)
+        char2, text2 = line2.split(':', 1)
+
+        if char1 != first_char:
+            raise ValueError(f"character name {char1} does not match {first_char} at {i*2}")
+        if char2 != second_char:
+            raise ValueError(f"character name {char2} does not match {second_char} at {i*2+1}")
+        
+        # Clean up the text (remove extra spaces)
+        text1 = text1.strip()
+        text2 = text2.strip()
+        
+        # Calculate length as number of words divided by 2.5
+        words1 = len(text1.split())
+        words2 = len(text2.split())
+        length = (words1 + words2) / 2.5
+        if length > 15:
+            raise ValueError(f"character lines too long: {words1+words2} at {i*2}\n{text1.split()}\n{text2.split()}\n{line1}\n{line2}")
+        
+        # Create a copy of the template
+        prompt = template
+        
+        # Replace common variables
+        prompt = prompt.replace('{index}', str(i))
+        prompt = prompt.replace('{length}', str(length))
+        
+        # Replace character-specific variables
+        prompt = prompt.replace(f'{{{first_char}}}', text1)
+        prompt = prompt.replace(f'{{{second_char}}}', text2)
+        
+        # Add the prompt to our list
+        prompts.append(prompt)
+    
+    # Join all prompts with newlines
+    return '\n'.join(prompts)
+
+
+class CallsheetDialogueHelper:
+    """
+    """
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "template": ("STRING", {"multiline": True}),
+                "dialogue": ("STRING", {"multiline": True}),
+            },
+        }
+
+    RETURN_TYPES = ("STRING",)
+    FUNCTION = "build"
+    CATEGORY = "Callsheet/Text"
+
+    def build(self, template, dialogue):
+        prompt = generate_prompts(template, dialogue)
+        return (prompt,)
+
+
+def prompt_from_templates(i, t_a, t_b, t_a_b, t_b_a, char_a, char_b, dialogue):
+    length = dialogue[0][2]
+    if dialogue[0][0] == char_a:
+        if len(dialogue) == 1:
+            prompt = t_a
+        else:
+            prompt = t_a_b
+            length += dialogue[1][2]
+    else:
+        if len(dialogue) == 1:
+            prompt = t_b
+        else:
+            prompt = t_b_a
+            length += dialogue[1][2]
+    
+    # Replace common variables
+    prompt = prompt.replace('{index}', str(i))
+    prompt = prompt.replace('{length}', str(length))
+    
+    # Replace character-specific variables
+    prompt = prompt.replace(f'{{{dialogue[0][0]}}}', dialogue[0][1])
+    if len(dialogue) > 1:
+        prompt = prompt.replace(f'{{{dialogue[1][0]}}}', dialogue[1][1])
+    
+    return prompt
+
+
+def prompts_from_templates(t_a, t_b, t_a_b, t_b_a, max_length, dialogue):
+    # Split dialogue into lines and discard empty lines
+    all_lines = [line for line in dialogue.strip().split('\n')]
+
+    dialogue_lines = []
+    char_a = None
+    char_b = None
+    last_line = None
+    prompts = []
+    for line in all_lines:
+        line = line.strip()
+        if not line:
+            continue
+        char, _, text = line.partition(':')
+        text = text.strip()
+        if not text:
+            continue
+        if char_a is None:
+            char_a = char
+        elif char_b is None:
+            char_b = char
+        elif char != char_a and char != char_b:
+            raise ValueError(f"unknown character name {char}")
+        words = len(text.split())
+        length = words / 2.5
+        if length > max_length:
+            raise ValueError(f"line {length} greater than {max_length}\n{line}")
+        cur_line = (char,text,length)
+        if last_line:
+            if last_line[2] + cur_line[2] <= max_length:
+                dialogue_lines.append(cur_line)
+                prompts.append(prompt_from_templates(len(prompts),
+                                                    t_a, t_b, t_a_b, t_b_a,
+                                                    char_a, char_b, dialogue_lines))
+                last_line = None
+                dialogue_lines = []
+                continue
+            prompts.append(prompt_from_templates(len(prompts),
+                                                t_a, t_b, t_a_b, t_b_a,
+                                                char_a, char_b, dialogue_lines))
+            last_line = None
+            dialogue_lines = []
+        last_line = cur_line
+        dialogue_lines.append(last_line)
+
+    if dialogue_lines:
+        prompts.append(prompt_from_templates(len(prompts), t_a, t_b, t_a_b, t_b_a,
+                                             char_a, char_b, dialogue_lines))
+
+    # Join all prompts with newlines
+    return '\n'.join(prompts)
+
+
+class CallsheetDialogueHelperB:
+    """
+    """
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "template_a": ("STRING", {"forceInput": True}),
+                "template_b": ("STRING", {"forceInput": True}),
+                "max_length_per_prompt": ("FLOAT",{"default":15}),
+                "dialogue": ("STRING", {"multiline": True}),
+            },
+            "optional": {
+                "template_a_b": ("STRING", {"forceInput": True}),
+                "template_b_a": ("STRING", {"forceInput": True}),
+            }
+        }
+
+    RETURN_TYPES = ("STRING",)
+    FUNCTION = "build"
+    CATEGORY = "Callsheet/Text"
+
+    def build(self, template_a, template_b, template_a_b, template_b_a,
+              max_length_per_prompt, dialogue):
+        prompt = prompts_from_templates(template_a, template_b,
+            template_a_b, template_b_a, max_length_per_prompt, dialogue)
+        return (prompt,)
+
+
+
+
+
+
+
+
+def _prompts_from_templates(t_a, t_b, t_a_b, t_b_a, speed_a, speed_b,
+                           max_length, dialogue):
+    # Split dialogue into lines and discard empty lines
+    all_lines = [line for line in dialogue.strip().split('\n')]
+
+    dialogue_lines = []
+    char_a = None
+    char_b = None
+    last_line = None
+    prompts = []
+    for line in all_lines:
+        line = line.strip()
+        if not line:
+            continue
+        char, _, text = line.partition(' ')
+        text = text.strip()
+        if not text:
+            continue
+        if char_a is None:
+            char_a = char
+        elif char_b is None:
+            char_b = char
+        elif char != char_a and char != char_b:
+            raise ValueError(f"unknown character name {char}")
+        words = len(text.split())
+        if char == char_a:
+            length = words / speed_a
+        else:
+            length = words / speed_b
+        if length > max_length:
+            raise ValueError(f"line {length} greater than {max_length}\n{line}")
+        cur_line = (char,text,length)
+        if last_line:
+            if last_line[2] + cur_line[2] <= max_length:
+                dialogue_lines.append(cur_line)
+                prompts.append(prompt_from_templates(len(prompts),
+                                                    t_a, t_b, t_a_b, t_b_a,
+                                                    char_a, char_b, dialogue_lines))
+                last_line = None
+                dialogue_lines = []
+                continue
+            prompts.append(prompt_from_templates(len(prompts),
+                                                t_a, t_b, t_a_b, t_b_a,
+                                                char_a, char_b, dialogue_lines))
+            last_line = None
+            dialogue_lines = []
+        last_line = cur_line
+        dialogue_lines.append(last_line)
+
+    if dialogue_lines:
+        prompts.append(prompt_from_templates(len(prompts), t_a, t_b, t_a_b, t_b_a,
+                                             char_a, char_b, dialogue_lines))
+
+    # Join all prompts with newlines
+    return '\n'.join(prompts)
+
+
+class CallsheetDialogueHelperC:
+    """
+    """
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "template_a": ("STRING", {"forceInput": True}),
+                "template_b": ("STRING", {"forceInput": True}),
+                "speed_a": ("FLOAT",{"default":3.36}),
+                "speed_b": ("FLOAT",{"default":3.36}),
+                "max_length_per_prompt": ("FLOAT",{"default":15}),
+                "dialogue": ("STRING", {"multiline": True}),
+            },
+            "optional": {
+                "template_a_b": ("STRING", {"forceInput": True}),
+                "template_b_a": ("STRING", {"forceInput": True}),
+            }
+        }
+
+    RETURN_TYPES = ("STRING",)
+    FUNCTION = "build"
+    CATEGORY = "Callsheet/Text"
+
+    def build(self, template_a, template_b, template_a_b, template_b_a,
+              speed_a, speed_b, max_length_per_prompt, dialogue):
+        prompt = _prompts_from_templates(
+            template_a, template_b,
+            template_a_b, template_b_a,
+            speed_a, speed_b,
+            max_length_per_prompt, dialogue)
+        return (prompt,)
+
+
+
+
+
 class CallsheetLoRATagLoader(LoraLoader):
     @classmethod
     def INPUT_TYPES(s):
