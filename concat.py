@@ -2,6 +2,7 @@ import json
 import os
 import re
 import subprocess
+from fnmatch import fnmatch
 
 import folder_paths
 
@@ -165,7 +166,25 @@ class CallsheetConcatVideos:
             except ValueError as e:
                 return self._notice(f"labels entry '{entry}': {e}",
                                     problem=True)
-            specs.append((label, spec))
+            if '*' in label:
+                found = False
+                for item in items:
+                    item_label = item['label']
+                    if fnmatch(item_label, label):
+                        specs.append((item_label, spec))
+                        found = True
+                if not found:
+                    return self._notice(
+                        f"no matching label '{label}' found in the callsheet — "
+                        f"was it renamed? Update the labels widget.",
+                        problem=True)
+            else:
+                if label not in by_label:
+                    return self._notice(
+                        f"label '{label}' is not in the callsheet — "
+                        f"was it renamed? Update the labels widget.",
+                        problem=True)
+                specs.append((label, spec))
 
         def selected_video(label):
             key = resolver(label)
@@ -181,11 +200,6 @@ class CallsheetConcatVideos:
         if specs:
             missing = []
             for label, _ in specs:
-                if label not in by_label:
-                    return self._notice(
-                        f"label '{label}' is not in the callsheet — "
-                        f"was it renamed? Update the labels widget.",
-                        problem=True)
                 rec = selected_video(label)
                 if rec is None:
                     missing.append(label)
