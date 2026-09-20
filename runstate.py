@@ -29,6 +29,7 @@ def _run(pid):
     if pid not in _RUNS:
         while len(_RUNS) > 32:          # prune old runs
             _RUNS.pop(next(iter(_RUNS)))
+        print(f"runstate new {pid}")
         _RUNS[pid] = {"emitted": 0, "deferred": 0, "received": 0,
                       "requeued": False, "capped": False}
     return _RUNS[pid]
@@ -42,15 +43,15 @@ def report(emitted, deferred):
     'requeued' flag makes it fire at most once per pass."""
     pid = _current_prompt_id()
     r = _run(pid)
+    print(f"runstate {pid} emitted {emitted} + {r["emitted"]} | deferred {deferred}")
     r["emitted"] += emitted
     r["deferred"] += deferred
-    if r["requeued"] or not _SETTINGS["auto_continue"]:
-        return
 
 
 def report_received(received):
     pid = _current_prompt_id()
     r = _run(pid)
+    print(f"runstate {pid} received {received} + {r["received"]} / {r["emitted"]} | {r["requeued"]}")
     r["received"] += received
     if r["received"] > r["emitted"]:
         raise RuntimeError("callsheet report_received: received more than emitted!")
