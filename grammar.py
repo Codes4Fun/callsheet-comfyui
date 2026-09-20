@@ -369,49 +369,42 @@ def parse_and_validate(text, pipelines, strict, base_seed,
             height = int_prop("height", dims_required)
 
         # ---- fps and length (type-gated) ----------------------------------
-        if ptype == "image":
-            for k in ("length", "fps"):
-                if k in headers:
-                    errors.append(f"{tag}: '{k}' is not valid on an "
-                                  f"image-typed pipeline")
-            fps, length = 0, 0   # inherited defaults silently ignored
-        else:
-            default_rate = default_fps if ptype == "video" else default_hz
-            if default_rate > 0:
-                if fps not in headers:
-                    fps = default_rate
-                else:
-                    fps_raw = headers.get("fps", "0")
-                    try:
-                        fps = int(fps_raw)
-                        if fps <= 0:
-                            raise ValueError
-                    except ValueError:
-                        errors.append(f"{tag}: 'fps' must be a positive "
-                                    f"integer")
-                        fps = default_rate
+        default_rate = default_fps if ptype == "video" else default_hz
+        if default_rate > 0:
+            if fps not in headers:
+                fps = default_rate
             else:
-                fps_raw = headers.get("fps", defaults.get(
-                    "fps", None if strict else widget_defaults.get("fps")))
-                fps = 0
-                if fps_raw is not None:
-                    try:
-                        fps = int(fps_raw)
-                        if fps <= 0:
-                            raise ValueError
-                    except ValueError:
-                        errors.append(f"{tag}: 'fps' must be a positive "
-                                    f"integer")
-                        fps = 0
-            length = _parse_length(
-                headers.get("length", defaults.get("length", "1")),
-                fps, tag, errors, default_length_step, default_length_offset)
-            if ptype == "video":
-                if length <= 0:
-                    errors.append(f"{tag}: video items require a "
-                                  f"positive 'length'")
-                if fps <= 0:
-                    errors.append(f"{tag}: video items require 'fps'")
+                fps_raw = headers.get("fps", "0")
+                try:
+                    fps = int(fps_raw)
+                    if fps <= 0:
+                        raise ValueError
+                except ValueError:
+                    errors.append(f"{tag}: 'fps' must be a positive "
+                                f"integer")
+                    fps = default_rate
+        else:
+            fps_raw = headers.get("fps", defaults.get(
+                "fps", None if strict else widget_defaults.get("fps")))
+            fps = 0
+            if fps_raw is not None:
+                try:
+                    fps = int(fps_raw)
+                    if fps <= 0:
+                        raise ValueError
+                except ValueError:
+                    errors.append(f"{tag}: 'fps' must be a positive "
+                                f"integer")
+                    fps = 0
+        length = _parse_length(
+            headers.get("length", defaults.get("length", "1")),
+            fps, tag, errors, default_length_step, default_length_offset)
+        if ptype == "video":
+            if length <= 0:
+                errors.append(f"{tag}: video items require a "
+                                f"positive 'length'")
+            if fps <= 0:
+                errors.append(f"{tag}: video items require 'fps'")
 
         # ---- seed: plain base_seed, stable under reordering -----------------
         try:
