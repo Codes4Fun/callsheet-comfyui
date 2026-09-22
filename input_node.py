@@ -21,6 +21,12 @@ def _load_json(s, name, expect):
 
 
 def _pipeline_build_jobs(candidates):
+    # local cache
+    media_images = {}        # load_store_image
+    media_last_frames = {}   # load_video_last_frame
+    media_first_frames = {}  # load_video_first_frame
+    media_audio = {}         # load_store_audio
+
     jobs = []
     for c in candidates:
         item = c["item"]
@@ -28,28 +34,67 @@ def _pipeline_build_jobs(candidates):
 
         cont_rec = c["cont_rec"]
         if cont_rec is not None:
-            cont_frame = (load_video_last_frame(cont_rec)
-                            if cont_rec.get("kind") == "video"
-                            else load_store_image(cont_rec))
+            filename = cont_rec["filename"]
+            if cont_rec.get("kind") == "video":
+                if filename in media_last_frames:
+                    cont_frame = media_last_frames[filename]
+                else:
+                    cont_frame = load_video_last_frame(cont_rec)
+                    media_last_frames[filename] = cont_frame
+            else:
+                if filename in media_images:
+                    cont_frame = media_images[filename]
+                else:
+                    cont_frame = load_store_image(cont_rec)
+                    media_images[filename] = cont_frame
         else:
             cont_frame = None
 
         tgt_rec = c["tgt_rec"]
         if tgt_rec is not None:
-            tgt_frame = (load_video_first_frame(tgt_rec)
-                            if tgt_rec.get("kind") == "video"
-                            else load_store_image(tgt_rec))
+            filename = tgt_rec["filename"]
+            if tgt_rec.get("kind") == "video":
+                if filename in media_first_frames:
+                    tgt_frame = media_first_frames[filename]
+                else:
+                    tgt_frame = load_video_first_frame(tgt_rec)
+                    media_first_frames[filename] = tgt_frame
+            else:
+                if filename in media_images:
+                    tgt_frame = media_images[filename]
+                else:
+                    tgt_frame = load_store_image(tgt_rec)
+                    media_first_frames[filename] = tgt_frame
         else:
             tgt_frame = None
 
-        ref_imgs = [load_store_image(VARIATION_STORE[k])
-                    for k in c["ref_keys"]]
+        ref_imgs = []
+        for k in c["ref_keys"]:
+            rec = VARIATION_STORE[k]
+            filename = rec["filename"]
+            if filename in media_images:
+                ref_imgs.append(media_images[filename])
+            else:
+                img = load_store_image(rec)
+                ref_imgs.append(img)
+                media_images[filename] = img
         while len(ref_imgs) < MAX_REFS:
             ref_imgs.append(None)    # loud failure if consumed
-        aref_audio = [load_store_audio(VARIATION_STORE[k])
-                        for k in c["aref_keys"]]
+
+        aref_audio = []
+        for k in c["aref_keys"]:
+            rec = VARIATION_STORE[k]
+            filename = rec["filename"]
+            if filename in media_audio:
+                aref_audio.append(media_audio[filename])
+            else:
+                audio = load_store_audio(rec)
+                aref_audio.append(audio)
+                media_audio[filename] = audio
         while len(aref_audio) < MAX_AUDIO_REFS:
             aref_audio.append(None)
+
+        # NOTE: doesn't seem useful to cache video references
 
         vref_frames, vref_audio = [], []
         for k, (sf, ef), src_fps in c["vref_windows"]:
