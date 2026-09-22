@@ -10,6 +10,12 @@ _PASS_OF = {}   # prompt_id -> pass number (1 = user-initiated run)
 def configure(auto_continue, max_passes):
     _SETTINGS["auto_continue"] = auto_continue
     _SETTINGS["max_passes"] = max_passes
+    # reset run in case everything rerun in the same prompt
+    print("runstate configure")
+    pid = _current_prompt_id()
+    r = _run(pid)
+    r["emitted"] = 0
+    r["deferred"] = 0
 
 
 def _current_prompt_id():
