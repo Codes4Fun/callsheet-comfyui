@@ -691,7 +691,7 @@ class CallsheetDialogueHelperB:
 
 
 def _prompts_from_templates(t_a, t_b, t_a_b, t_b_a, speed_a, speed_b,
-                           max_length, dialogue):
+                           max_length, dialogue, solo, pad_length):
     # Split dialogue into lines and discard empty lines
     all_lines = [line for line in dialogue.strip().split('\n')]
 
@@ -714,16 +714,18 @@ def _prompts_from_templates(t_a, t_b, t_a_b, t_b_a, speed_a, speed_b,
             char_b = char
         elif char != char_a and char != char_b:
             raise ValueError(f"unknown character name {char}")
-        words = len(text.split())
+        #words = len(text.split())
+        # extract quoted text blocks, split the words, get length and sum them
+        words = sum([len(part.split()) for part in text.split('"')[1::2]])
         if char == char_a:
-            length = words / speed_a
+            length = words / speed_a + pad_length
         else:
-            length = words / speed_b
+            length = words / speed_b + pad_length
         if length > max_length:
             raise ValueError(f"line {length} greater than {max_length}\n{line}")
-        cur_line = (char,text,length)
+        cur_line = (char,text,length if words else 0)
         if last_line:
-            if last_line[2] + cur_line[2] <= max_length:
+            if (solo and words == 0) or not solo and (last_line[2] + cur_line[2] <= max_length):
                 dialogue_lines.append(cur_line)
                 prompts.append(prompt_from_templates(len(prompts),
                                                     t_a, t_b, t_a_b, t_b_a,
@@ -736,6 +738,8 @@ def _prompts_from_templates(t_a, t_b, t_a_b, t_b_a, speed_a, speed_b,
                                                 char_a, char_b, dialogue_lines))
             last_line = None
             dialogue_lines = []
+        if words == 0:
+            raise ValueError(f"found no words in {line}")
         last_line = cur_line
         dialogue_lines.append(last_line)
 
@@ -761,6 +765,8 @@ class CallsheetDialogueHelperC:
                 "speed_b": ("FLOAT",{"default":3.36}),
                 "max_length_per_prompt": ("FLOAT",{"default":15}),
                 "dialogue": ("STRING", {"multiline": True}),
+                "solo": ("BOOLEAN", {"default": True}),
+                "pad_length": ("FLOAT", {"default": 1})
             },
             "optional": {
                 "template_a_b": ("STRING", {"forceInput": True}),
@@ -773,12 +779,12 @@ class CallsheetDialogueHelperC:
     CATEGORY = "Callsheet/Text"
 
     def build(self, template_a, template_b, template_a_b, template_b_a,
-              speed_a, speed_b, max_length_per_prompt, dialogue):
+              speed_a, speed_b, max_length_per_prompt, dialogue, solo, pad_length):
         prompt = _prompts_from_templates(
             template_a, template_b,
             template_a_b, template_b_a,
             speed_a, speed_b,
-            max_length_per_prompt, dialogue)
+            max_length_per_prompt, dialogue, solo, pad_length)
         return (prompt,)
 
 
