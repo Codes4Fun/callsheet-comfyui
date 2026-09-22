@@ -75,7 +75,7 @@ async function refreshAssets(node, init) {
       }
       return;
     }
-    node.csState.assets = data.assets;
+    node.csSetAssets(data.assets);
     if (init) {
       const f = getFocusIndex(node, false);
       if (f != -1) node.csState.current = f;
@@ -97,7 +97,12 @@ function getFocus(node) {
   if (w) {
     try {
       const state = JSON.parse(w?.value || '{"focus":[]}');
-      return Array.isArray(state.focus) ? state.focus : [];
+      if (!Array.isArray(state.focus)){
+        return [];
+      }
+      let idxs = state.focus.map((n) => node.csState.asset_idx[n]).sort();
+      let labels = idxs.map((idx) => node.csState.assets[idx].label);
+      return labels;
     } catch (e) { return []; }
   } else {
     // TODO: deprecated / remove
@@ -130,7 +135,8 @@ function setFocus(node, list) {
 
 function getAssetIndex(node, name) {
   const {assets} = node.csState;
-  return assets.findIndex((a) => a.label === name);
+  const idx = node.csState.asset_idx[name];
+  return idx != undefined? idx : -1;
 }
 
 function getFocusIndex(node, next=false) {
@@ -292,7 +298,7 @@ function buildUI(node) {
     // navigation row — action buttons stay in place (disabled, not
     // hidden, for injected items) so arrow positions never shift
     const nav = document.createElement("div");
-    nav.style.cssText = "display:flex;gap:6px;align-items:center;";
+    nav.style.cssText = "display:flex;gap:6px;align-items:start;";
 
     const refreshBtn = mkBtn("⟳", () => refreshAssets(node, false),
       "rebuild from the callsheet without queueing");
@@ -340,18 +346,29 @@ function buildUI(node) {
       }
     }
 
+    const label = `${asset.label}  (${current + 1}/${assets.length}` +
+                  `${asset.pipeline ? ", " + asset.pipeline : ""}` +
+                  `${asset.injected ? ", injected" : ""})`;
+    const label_button = mkBtn(label, (event) => {
+      const asset_labels = []
+      for (let a of node.csState.assets)
+        asset_labels.push(a.label);
+      new LiteGraph.ContextMenu(asset_labels,{
+        callback: (value) => {
+          node.csState.current = getAssetIndex(node, value);
+          node.csRender();
+        },
+        event,
+      });
+    });
+    label_button.style.cssText = "flex:1;text-align:center;";
     nav.append(
       mkBtn("◀", () => {
         node.csState.current =
           (current - 1 + assets.length) % assets.length;
         node.csRender();
       }),
-      Object.assign(document.createElement("span"), {
-        textContent: `${asset.label}  (${current + 1}/${assets.length}` +
-                     `${asset.pipeline ? ", " + asset.pipeline : ""}` +
-                     `${asset.injected ? ", injected" : ""})`,
-        style: "flex:1;text-align:center;",
-      }),
+      label_button,
       mkBtn("▶", () => {
         node.csState.current = (current + 1) % assets.length;
         node.csRender();
@@ -420,6 +437,13 @@ function buildUI(node) {
     el.append(strip);
   };
 
+  node.csSetAssets = (assets) => {
+    node.csState.assets = assets;
+    node.csState.asset_idx = {};
+    for (let idx in assets)
+      node.csState.asset_idx[assets[idx].label] = idx;
+  }
+
   node.addDOMWidget("asset_browser", "cs_browser", el,
                     { getMinHeight: () => 420 });
   node.csRender();
@@ -459,7 +483,7 @@ app.registerExtension({
     nodeType.prototype.onExecuted = function (message) {
       const r = onExecuted?.apply(this, arguments);
       if (message?.cs_assets) {
-        this.csState.assets = message.cs_assets;
+        this.csSetAssets(message.cs_assets)
         this.csState.pending = false;   // a run reconciles pending state
         this.csRender();
       }
