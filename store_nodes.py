@@ -242,7 +242,7 @@ class CallsheetStore:
             "video_format": (list(FORMAT_PRESETS.keys()),),
             "video_audio": (list(AUDIO_CODEC_ARGS.keys()),),
             "audio_format": (list(AUDIO_FORMAT_PRESETS.keys()),),
-            "image_index": ("INT", {"default": -1})
+            "image_index": ("INT", {"default": -1, "lazy": True}),
         }, "optional": {
             "images": ("IMAGE", {"lazy": True}),
             "audio": ("AUDIO", {"lazy": True}),
@@ -254,12 +254,13 @@ class CallsheetStore:
     CATEGORY = "callsheet"
 
     def check_lazy_status(self, job, fps, video_format, video_audio,
-                          audio_format, image_index, images=None, audio=None, **kw):
+                          audio_format, image_index, images=None, audio=None):
         if not job:
             return []
         needed = []
         if images is not None and unresolved(images):
             needed.append("images")
+            needed.append("image_index")
         if audio is not None and unresolved(audio):
             needed.append("audio")
         return needed
