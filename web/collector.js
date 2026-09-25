@@ -380,6 +380,11 @@ function buildUI(node) {
     // main preview
     const sel = asset.variations.find((v) => v.key === asset.selected);
     if (sel) {
+      // info (image size, etc)
+      const info = document.createElement("div");
+      info.style.marginLeft = 'auto';
+      info.style.marginRight = 'auto';
+
       let big;
       if (sel.kind === "video") {
         big = document.createElement("video");
@@ -389,6 +394,9 @@ function buildUI(node) {
           ? { ...sel, filename: sel.preview } : sel);
         if (sel.poster)
           big.poster = viewUrl({ ...sel, filename: sel.poster });
+        big.addEventListener('loadedmetadata', function () {
+          info.textContent = `${big.videoWidth} x ${big.videoHeight}`;
+        });
       } else if (sel.kind === "audio") {
         big = document.createElement("div");
         big.style.cssText =
@@ -408,12 +416,18 @@ function buildUI(node) {
       } else {
         big = document.createElement("img");
         big.src = viewUrl(sel);
+        big.addEventListener('load', function () {
+          if (big.complete && big.naturalWidth !== 0) {
+            info.textContent = `${big.naturalWidth} x ${big.naturalHeight}`
+          }
+        });
       }
       big.style.maxWidth = "100%";
       big.style.maxHeight = "280px";
       big.style.alignSelf = "center";
       if (sel.kind !== "audio") big.style.objectFit = "contain";
       el.append(big);
+      el.append(info);
     } else {
       el.append(Object.assign(document.createElement("div"),
         { textContent: "Not generated yet." }));
