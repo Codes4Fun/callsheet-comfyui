@@ -451,6 +451,27 @@ function buildUI(node) {
     el.append(strip);
   };
 
+  setTimeout(function() {
+    const nodeElement = document.querySelector(`[data-node-id="${node.id}"]`);
+    if (!nodeElement) {
+      console.error("failed to find node element");
+    } else {
+      nodeElement.onkeydown = function (e) {
+        if (e.key == "ArrowLeft") {
+          const { assets } = node.csState;
+          const current = node.csState.current;
+          node.csState.current = (current - 1 + assets.length) % assets.length;
+          node.csRender();
+        } else if (e.key == "ArrowRight") {
+          const { assets } = node.csState;
+          const current = node.csState.current;
+          node.csState.current = (current + 1) % assets.length;
+          node.csRender();
+        }
+      }
+    }
+  }, 1000);
+
   node.csSetAssets = (assets) => {
     node.csState.assets = assets;
     node.csState.asset_idx = {};
