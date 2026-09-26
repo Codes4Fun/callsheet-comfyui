@@ -1,9 +1,10 @@
 from .store import VARIATION_STORE, variation_key, load_store_image
-
+from .resolve import build_resolver
 
 def build_assets(items, selections, wanted):
     """Shared by the collector node and the /callsheet/assets route:
     builds the browsable asset list for a set of parsed items."""
+    resolver = build_resolver(items, selections)
     assets = []
     for item in sorted(items, key=lambda i: i["index"]):
         if wanted and item["pipeline"] not in wanted:
@@ -34,8 +35,11 @@ def build_assets(items, selections, wanted):
                       for k, r in recs]
 
         chosen = selections.get(item["label"])
-        if chosen not in {v["key"] for v in variations}:
-            chosen = variations[-1]["key"] if variations else None
+        var_keys = {v["key"] for v in variations}
+        if chosen not in var_keys:
+            chosen = resolver(item["label"])
+            if chosen not in var_keys:
+                chosen = variations[-1]["key"] if variations else None
 
         assets.append({"label": item["label"], "index": item["index"],
                        "pipeline": item["pipeline"],
