@@ -8,9 +8,8 @@ This is an Alpha release, aka, "It works on my computers", the main dependency i
 
 ## Diving In
 
-You can grab an example workflow and start generating and/or follow a prompt development guide.
-
-TODO
+You can find guides and documentation at:
+https://codes4fun.github.io/callsheet-docs
 
 ## Overview
 
@@ -148,10 +147,6 @@ flags: turbo
 ---
 the door opens, camera follows inside
 ```
-
-## Tutorials & Examples
-
-TODO
 
 ## Credits
 
