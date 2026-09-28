@@ -40,6 +40,7 @@ def _pipeline_build_jobs(candidates):
                     cont_frame = media_last_frames[filename]
                 else:
                     cont_frame = load_video_last_frame(cont_rec)
+                    print(f"-- {cont_rec} {len(cont_frame)}")
                     media_last_frames[filename] = cont_frame
             else:
                 if filename in media_images:
@@ -58,6 +59,7 @@ def _pipeline_build_jobs(candidates):
                     tgt_frame = media_first_frames[filename]
                 else:
                     tgt_frame = load_video_first_frame(tgt_rec)
+                    print(f"-- {tgt_rec} {len(tgt_frame)}")
                     media_first_frames[filename] = tgt_frame
             else:
                 if filename in media_images:
@@ -99,11 +101,12 @@ def _pipeline_build_jobs(candidates):
         vref_frames, vref_audio = [], []
         for k, (sf, ef), src_fps in c["vref_windows"]:
             rec = VARIATION_STORE[k]
-            vref_frames.append(load_video_frames(rec, (sf, ef)))
-            vref_audio.append(
-                load_store_audio_window(rec, sf / src_fps,
-                                        ef / src_fps)
-                if rec.get("has_audio") else None)
+            frames = load_video_frames(rec, (sf, ef))
+            print(f"-- {rec['filename']} {sf} {ef} {len(frames)}")
+            audio = load_store_audio_window(rec, sf / src_fps,
+                ef / src_fps) if rec.get("has_audio") else None
+            vref_frames.append(frames)
+            vref_audio.append(audio)
         while len(vref_frames) < MAX_VIDEO_REFS:
             vref_frames.append(None)
             vref_audio.append(None)
@@ -113,6 +116,7 @@ def _pipeline_build_jobs(candidates):
             k, (sf, ef), src_fps = c["cv_window"]
             rec = VARIATION_STORE[k]
             cv_frames = load_video_frames(rec, (sf, ef))
+            print(f" -- {rec['filename']} {len(cv_frames)}")
             if rec.get("has_audio"):
                 cv_audio = load_store_audio_window(
                     rec, sf / src_fps, ef / src_fps)
@@ -122,6 +126,7 @@ def _pipeline_build_jobs(candidates):
             k, (sf, ef), src_fps = c["tv_window"]
             rec = VARIATION_STORE[k]
             tv_frames = load_video_frames(rec, (sf, ef))
+            print(f" -- {rec['filename']} {len(tv_frames)}")
             if rec.get("has_audio"):
                 tv_audio = load_store_audio_window(
                     rec, sf / src_fps, ef / src_fps)
@@ -160,7 +165,8 @@ def _pipeline_build_jobs(candidates):
     return jobs
 
 
-def _build_pipeline_candidates(pipelines, items, selected, focus_list):
+def _build_pipeline_candidates(pipelines, items, selected, focus_list,
+                               max_jobs_per_pass):
     # ------------------------------------------------------------------
     # Phase 1: resolve, validate, collect candidates (no media decode)
     # ------------------------------------------------------------------
@@ -183,6 +189,8 @@ def _build_pipeline_candidates(pipelines, items, selected, focus_list):
         allowed = {f for f in pipeline["allowed_flags"]}
         uniform = pipeline["uniform_flags"]
         budget = pipeline["max_jobs_per_pass"]
+        if budget == 0 or (max_jobs_per_pass > 0 and budget > max_jobs_per_pass):
+            budget = max_jobs_per_pass
         wanted = {task for task in pipeline["tasks"]} # TODO: redundant?
 
         candidates = []
@@ -398,7 +406,7 @@ class CallsheetTextInput:
 
         selected = _load_json(selections, "selections", dict)
 
-        _build_pipeline_candidates(pipelines, items, selected, focus_list)
+        _build_pipeline_candidates(pipelines, items, selected, focus_list, 0)
 
         return ({"items": items, "selections": selected,
                  "focus": focus_list, "pipelines": pipelines},)
@@ -508,7 +516,8 @@ class CallsheetTextInputB:
 
         selected = wf_state["selections"]
 
-        _build_pipeline_candidates(pipelines, items, selected, focus_list)
+        _build_pipeline_candidates(pipelines, items, selected, focus_list,
+                                   max_jobs_per_pass)
 
         return ({"items": items, "selections": selected,
                  "focus": focus_list, "pipelines": pipelines},)
