@@ -1,7 +1,9 @@
-from .store import VARIATION_STORE, variation_key
-from .trimspec import parse_spec, resolve_window
-from . import runstate
+import os
 
+from .store import STORE_DIR, VARIATION_STORE, variation_key
+from .trimspec import parse_spec, resolve_window
+from .media import video_frame_info
+from . import runstate
 
 def build_resolver(items, selections):
     """Returns resolve(label) -> store key or None.
