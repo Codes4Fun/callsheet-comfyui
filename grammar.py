@@ -371,7 +371,7 @@ def parse_and_validate(text, pipelines, strict, base_seed,
         # ---- fps and length (type-gated) ----------------------------------
         default_rate = default_fps if ptype == "video" else default_hz
         if default_rate > 0:
-            if fps not in headers:
+            if "fps" not in headers:
                 fps = default_rate
             else:
                 fps_raw = headers.get("fps", "0")
