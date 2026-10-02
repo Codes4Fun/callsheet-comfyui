@@ -152,8 +152,9 @@ class CallsheetFirstLastRefs:
             "refs": ("CS_REFS",),
         }}
 
-    RETURN_TYPES = ("IMAGE","AUDIO","IMAGE","AUDIO")
-    RETURN_NAMES = ("first_frames","first_audio","last_frames","last_audio")
+    RETURN_TYPES = ("IMAGE","AUDIO","IMAGE","AUDIO","AUDIO")
+    RETURN_NAMES = ("first_frames","first_audio","last_frames","last_audio",
+                    "audio_track")
     # OUTPUT_IS_LIST = (True, True, True, True)
     FUNCTION = "run"
     CATEGORY = "callsheet"
@@ -174,7 +175,9 @@ class CallsheetFirstLastRefs:
             last_frames = refs["target_frame"]
             last_audio = None
 
-        return (first_frames, first_audio, last_frames, last_audio)
+        audio_track = refs["audio_track"]
+
+        return (first_frames, first_audio, last_frames, last_audio, audio_track)
 
 
 class CallsheetPipeline:

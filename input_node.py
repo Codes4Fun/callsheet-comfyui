@@ -131,6 +131,18 @@ def _pipeline_build_jobs(candidates):
                 tv_audio = load_store_audio_window(
                     rec, sf / src_fps, ef / src_fps)
 
+        atrack_rec = c["atrack_rec"]
+        if atrack_rec is not None:
+            filename = atrack_rec["filename"]
+            if filename in media_audio:
+                atrack = media_audio[filename]
+            else:
+                audio = load_store_audio(atrack_rec)
+                media_audio[filename] = audio
+                atrack = audio
+        else:
+            atrack = None
+
         refs = {}
         for i in range(MAX_REFS):
             refs[f"ref_{i}"] = ref_imgs[i]
@@ -145,6 +157,7 @@ def _pipeline_build_jobs(candidates):
         refs["target_frame"] = tgt_frame
         refs["target_video"] = tv_frames
         refs["target_video_audio"] = tv_audio
+        refs["audio_track"] = atrack
 
         for seed, key in pending:
             job = {}

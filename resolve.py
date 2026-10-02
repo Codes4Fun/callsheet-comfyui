@@ -41,6 +41,8 @@ def build_resolver(items, selections):
         cont_key = resolve(cont_label) if cont_label else None
         tgt_label = item.get("target_frame")
         tgt_key = resolve(tgt_label) if tgt_label else None
+        atrack_label = item.get("audio_track")
+        atrack_key = resolve(atrack_label) if atrack_label else None
 
         def clip_pair(entry):
             if not entry:
@@ -64,10 +66,12 @@ def build_resolver(items, selections):
                 or any(k is None for k in aref_keys)
                 or (cont_label and cont_key is None)
                 or (tgt_label and tgt_key is None)
+                or (atrack_label and atrack_key is None)
                 or cv_missing or tv_missing):
             return None
         stored = [variation_key(item, s, ref_keys, aref_keys, cont_key,
-                                vref_pairs, cv_pair, tgt_key, tv_pair)
+                                vref_pairs, cv_pair, tgt_key, tv_pair,
+                                atrack_key)
                   for s in item["seeds"]]
         stored = [k for k in stored if k in VARIATION_STORE]
         memo[label] = stored[-1] if stored else None
@@ -93,7 +97,7 @@ def focus_closure(items, focus):
         it = by_label[l]
         deps = list(it["refs"]) + list(it["audio_refs"])
         deps += [x for x, _ in it.get("video_refs", [])]
-        for k in ("continue_frame", "target_frame"):
+        for k in ("continue_frame", "target_frame", "audio_track"):
             if it.get(k):
                 deps.append(it[k])
         for k in ("continue_video", "target_video"):
@@ -139,6 +143,8 @@ def collect_candidates(items, selections, focus):
         cont_key = resolver(cont_label) if cont_label else None
         tgt_label = item.get("target_frame")
         tgt_key = resolver(tgt_label) if tgt_label else None
+        atrack_label = item.get("audio_track")
+        atrack_key = resolver(atrack_label) if atrack_label else None
 
         vref_pairs, vref_unresolved = [], []
         for l, spec in item.get("video_refs", []):
@@ -180,6 +186,8 @@ def collect_candidates(items, selections, focus):
             unresolved_deps.append(tgt_label)
         if tv_unresolved:
             unresolved_deps.append(tv_unresolved)
+        if atrack_label and atrack_key is None:
+            unresolved_deps.append(atrack_label)
 
         if unresolved_deps:
             detail = "; ".join(f"'{d}' {why(d)}"
@@ -216,6 +224,12 @@ def collect_candidates(items, selections, focus):
                 f"'{item['label']}': target_frame '{tgt_label}' "
                 f"resolved to a {tgt_rec.get('kind')} variation — "
                 f"must be video or image")
+        atrack_rec = VARIATION_STORE.get(atrack_key) if atrack_key else None
+        if atrack_rec and not atrack_rec.get("has_audio"):
+            item_errors.append(
+                f"'{item['label']}': audio_track resolved to "
+                f"a variation with no audio track")
+            atrack_rec = None
 
         vref_windows = []
         for (l, spec), (k, _) in zip(item.get("video_refs", []),
@@ -292,6 +306,8 @@ def collect_candidates(items, selections, focus):
             auto.append("target_video")
             if VARIATION_STORE[tv_pair[0]].get("has_audio"):
                 auto.append("target_video_audio")
+        if atrack_key:
+            auto.append("audio_track")
         eff_flags = list(dict.fromkeys(item["flags"] + auto))
 
         if item_errors:
@@ -315,6 +331,7 @@ def collect_candidates(items, selections, focus):
             "vref_pairs": vref_pairs, "vref_windows": vref_windows,
             "cv_window": cv_window,
             "tgt_key": tgt_key, "tgt_rec": tgt_rec,
-            "tv_window": tv_window})
+            "tv_window": tv_window,
+            "atrack_key": atrack_key, "atrack_rec": atrack_rec})
     
     return candidates, on_hold, deferred, hard_errors

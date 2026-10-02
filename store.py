@@ -54,7 +54,7 @@ def register(key, rec):
 
 def variation_key(item, seed, ref_keys=(), audio_ref_keys=(),
                   cont_key=None, video_refs=(), cont_video=None,
-                  target_key=None, target_video=None):
+                  target_key=None, target_video=None, audio_track=None):
     """Content-addressed identity of one variation. New fields are
     included only when present, so keys for items not using them are
     unchanged (existing stores stay valid)."""
@@ -82,6 +82,8 @@ def variation_key(item, seed, ref_keys=(), audio_ref_keys=(),
         definition["target"] = target_key
     if target_video:
         definition["target_video"] = list(target_video)
+    if audio_track:
+        definition["audio_track"] = audio_track
     payload = json.dumps(definition, sort_keys=True)
     return hashlib.sha1(payload.encode("utf-8")).hexdigest()[:16]
 

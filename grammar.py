@@ -19,7 +19,8 @@ PIPELINE_TYPES = ("image", "video", "audio")
 KNOWN_KEYS = {"label", "pipeline", "size", "width", "height", "length",
               "fps", "seed", "negative", "ref", "audio_ref", "video_ref",
               "continue_frame", "continue_video",
-              "target_frame", "target_video", "source", "flags"}
+              "target_frame", "target_video",
+              "audio_track", "source", "flags"}
 # properties that make no sense in a rolling defaults block
 ITEM_ONLY_KEYS = {"label", "ref", "audio_ref", "video_ref", "source",
                   "continue_frame", "continue_video",
@@ -243,8 +244,7 @@ def parse_and_validate(text, pipelines, strict, base_seed,
         if cont and "," in cont:
             errors.append(f"{tag}: 'continue_frame' takes a single label")
             cont = None
-        cont_video = _parse_single_clip(headers, "continue_video",
-                                        tag, errors)
+        cont_video = _parse_single_clip(headers, "continue_video", tag, errors)
         if cont and cont_video:
             errors.append(f"{tag}: use either 'continue_frame' or "
                           f"'continue_video', not both")
@@ -253,11 +253,15 @@ def parse_and_validate(text, pipelines, strict, base_seed,
         if tgt and "," in tgt:
             errors.append(f"{tag}: 'target_frame' takes a single label")
             tgt = None
-        tgt_video = _parse_single_clip(headers, "target_video",
-                                       tag, errors)
+        tgt_video = _parse_single_clip(headers, "target_video", tag, errors)
         if tgt and tgt_video:
             errors.append(f"{tag}: use either 'target_frame' or "
                           f"'target_video', not both")
+
+        audio_track = headers.get("audio_track", "").strip() or None
+        if audio_track and "," in audio_track:
+            errors.append(f"{tag}: 'audio_track' takes a single label")
+            audio_track = None
 
         # ---- pipeline + declared type ---------------------------------------
         def resolve(key):
@@ -308,7 +312,7 @@ def parse_and_validate(text, pipelines, strict, base_seed,
 
         if injected:
             if (refs or audio_refs or video_refs or cont or cont_video
-                    or tgt or tgt_video):
+                    or tgt or tgt_video or audio_track):
                 errors.append(f"{tag}: injected items cannot have refs, "
                               f"continuations, or targets")
             if label in variation_requests:
@@ -322,7 +326,8 @@ def parse_and_validate(text, pipelines, strict, base_seed,
                           "injected": True, "refs": [], "audio_refs": [],
                           "video_refs": [], "continue_frame": None,
                           "continue_video": None,
-                          "target_frame": None, "target_video": None})
+                          "target_frame": None, "target_video": None,
+                          "audio_track": None})
             index += 1
             continue
 
@@ -432,7 +437,8 @@ def parse_and_validate(text, pipelines, strict, base_seed,
                       "continue_frame": cont,
                       "continue_video": cont_video,
                       "target_frame": tgt,
-                      "target_video": tgt_video})
+                      "target_video": tgt_video,
+                      "audio_track": audio_track})
         index += 1
 
     # ---- reference validation --------------------------------------------------
@@ -440,7 +446,7 @@ def parse_and_validate(text, pipelines, strict, base_seed,
 
     def edges(it):
         e = it["refs"] + it["audio_refs"] + [l for l, _ in it["video_refs"]]
-        for k in ("continue_frame", "target_frame"):
+        for k in ("continue_frame", "target_frame", "audio_track"):
             if it[k]:
                 e = e + [it[k]]
         for k in ("continue_video", "target_video"):
@@ -501,6 +507,12 @@ def parse_and_validate(text, pipelines, strict, base_seed,
                     errors.append(f"'{it['label']}': {k} "
                                   f"'{it[k][0]}' must be a video item, "
                                   f"but its pipeline is typed '{t}'")
+        if it["audio_track"]:
+            t = target_type(it["audio_track"])
+            if t and t not in ("audio", "video"):
+                errors.append(f"'{it['label']}': audio_track '{r}' must be "
+                              f"an audio or video item, but its pipeline "
+                              f"is typed '{t}'")
 
     WHITE, GRAY, BLACK = 0, 1, 2
     color = {l: WHITE for l in by_label}
