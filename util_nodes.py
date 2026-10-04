@@ -170,12 +170,18 @@ class CallsheetAudioCrossfade:
 
 
 class CallsheetAudioOverlay:
-    """Layer a waveform over another"""
+    """Layer a waveform over another
+    length can set the output size in samples, 0 defaults to length of a_audio.
+    a_audio is an optional background track.
+    b_audio is an optional positional track which uses b_offset.
+    """
 
     @classmethod
     def INPUT_TYPES(cls):
         return {"required": {
+            "length": ("INT", {"default": 0, "min":0}),
             "b_offset": ("INT", {"default": 0}),
+        }, "optional": {
             "a_audio": ("AUDIO",),
             "b_audio": ("AUDIO",),
         }}
@@ -184,48 +190,76 @@ class CallsheetAudioOverlay:
     FUNCTION = "overlay"
     CATEGORY = "callsheet"
 
-    def overlay(self, b_offset, a_audio, b_audio):
+    def overlay(self, length, b_offset, a_audio=None, b_audio=None):
         if a_audio is None and b_audio is None:
             raise ValueError("CallsheetAudioOverlay: both audio inputs "
                              "are None — nothing to output")
-        if not b_audio:
+        if a_audio is None and not length:
+            raise ValueError("CallsheetAudioOverlay: no a_audio or length "
+                             " — unknown output size")
+        if b_audio is None and not length:
             return (a_audio,)
 
-        wa = a_audio["waveform"]
-        a_len = wa.shape[-1]
-        wb = b_audio["waveform"]
-        b_len = wb.shape[-1]
+        if not a_audio is None:
+            wa = a_audio["waveform"]
+            a_sr = a_audio["sample_rate"]
+            a_len = wa.shape[-1]
+        else:
+            wa = None
+            a_sr = 0
+            a_len = 0
 
-        if (b_len + b_offset) <= 0 or b_offset >= a_len:  # Out of bounds
-            return (a_audio,)
+        if not b_audio is None:
+            wb = b_audio["waveform"]
+            b_sr = a_audio["sample_rate"]
+            b_len = wb.shape[-1]
+        else:
+            wb = None
+            b_sr = 0
+            b_len = 0
 
-        if a_audio["sample_rate"] != b_audio["sample_rate"]:
-            raise ValueError(
-                f"CallsheetAudioOverlay: sample rates differ "
-                f"({a_audio['sample_rate']} vs {b_audio['sample_rate']}) — use "
-                f"Callsheet Audio Resample first")
+        if length == 0 or length == a_len:
+            if b_len == 0 or (b_len + b_offset) <= 0 or b_offset >= a_len:
+                return (a_audio,)  # Out of bounds
 
-        if wa.shape[0] != wb.shape[0] or wa.shape[1] != wb.shape[1]:
-            raise ValueError(
-                f"CallsheetAudioOverlay: batch/channel shapes differ "
-                f"({tuple(wa.shape[:2])} vs {tuple(wb.shape[:2])})")
+        if a_audio and b_audio:
+            if a_sr != b_sr:
+                raise ValueError(
+                    f"CallsheetAudioOverlay: sample rates differ "
+                    f"({a_sr} vs {b_sr}) — use "
+                    f"Callsheet Audio Resample first")
 
-        # Clone a_audio so we don't modify the input tensor
-        result = wa.clone()
+            if wa.shape[0] != wb.shape[0] or wa.shape[1] != wb.shape[1]:
+                raise ValueError(
+                    f"CallsheetAudioOverlay: batch/channel shapes differ "
+                    f"({tuple(wa.shape[:2])} vs {tuple(wb.shape[:2])})")
 
-        # Calculate clipped overlap region within a_audio bounds
-        a_start = max(0, b_offset)                    # Start in a (clamped to 0)
-        a_end = min(a_len, b_offset + b_len)          # End in a (clamped to a_len)
+        # create base tensor
+        if length:
+            w = wa if not a_audio is None else wb
+            result = torch.zeros(*w.shape[:-1], length, dtype=w.dtype, device=w.device)
+            if not a_audio is None:
+                min_len = min(a_len,length)
+                result[..., 0:min_len] = wa[..., 0:min_len]
+        else:
+            # Clone a_audio so we don't modify the input tensor
+            result = wa.clone()
+            length = a_len
 
-        # Calculate corresponding slice in b_audio
-        b_start = max(0, -b_offset)                   # Skip beginning of b if b_offset < 0
-        overlap_len = a_end - a_start
-        b_end = b_start + overlap_len                 # Will be <= b_len
+        if not b_audio is None:
+            # Calculate clipped overlap region within results bounds
+            a_start = max(0, b_offset)                    # Start in a (clamped to 0)
+            a_end = min(length, b_offset + b_len)         # End in a (clamped to length)
 
-        # Replace the overlapping portion of a with b
-        result[..., a_start:a_end] = wb[..., b_start:b_end]
+            # Calculate corresponding slice in b_audio
+            b_start = max(0, -b_offset)                   # Skip beginning of b if b_offset < 0
+            overlap_len = a_end - a_start
+            b_end = b_start + overlap_len                 # Will be <= b_len
 
-        return ({"waveform": result, "sample_rate": a_audio["sample_rate"]},)
+            # Replace the overlapping portion of a with b
+            result[..., a_start:a_end] = wb[..., b_start:b_end]
+
+        return ({"waveform": result, "sample_rate": a_sr or b_sr},)
 
 
 class CallsheetAudioResample:
