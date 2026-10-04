@@ -412,6 +412,9 @@ function buildUI(node) {
         player.controls = true;
         player.src = viewUrl(sel);
         player.style.cssText = "width:100%;";
+        player.addEventListener('loadedmetadata', function () {
+          info.textContent = `${player.duration}`;
+        });
         big.append(player);
       } else {
         big = document.createElement("img");
