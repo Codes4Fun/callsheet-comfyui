@@ -12,6 +12,7 @@ from .embed import CallsheetEmbeddedImage
 from .collector import CallsheetCollector
 from .concat import CallsheetConcatVideos
 from .util_nodes import (CallsheetAudioShift, CallsheetAudioCrossfade,
+                         CallsheetAudioOverlay,
                          CallsheetAudioResample, CallsheetAudioInfo,
                          CallsheetAudioTrim, CallsheetAudioPad,
                          CallsheetJobRouter, CallsheetHasValue,
@@ -48,6 +49,7 @@ NODE_CLASS_MAPPINGS = {
     "CallsheetCollector": CallsheetCollector,
     "CallsheetConcatVideos": CallsheetConcatVideos,
     "CallsheetAudioCrossfade": CallsheetAudioCrossfade,
+    "CallsheetAudioOverlay": CallsheetAudioOverlay,
     "CallsheetAudioTrim": CallsheetAudioTrim,
     "CallsheetAudioPad": CallsheetAudioPad,
     "CallsheetAudioResample": CallsheetAudioResample,
@@ -86,6 +88,7 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "CallsheetCollector": "Callsheet Collector",
     "CallsheetConcatVideos": "Callsheet Concat Videos",
     "CallsheetAudioCrossfade": "Callsheet Audio Crossfade",
+    "CallsheetAudioOverlay": "Callsheet Audio Overlay",
     "CallsheetAudioTrim": "Callsheet Audio Trim",
     "CallsheetAudioPad": "Callsheet Audio Pad",
     "CallsheetAudioResample": "Callsheet Audio Resample",

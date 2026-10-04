@@ -169,6 +169,65 @@ class CallsheetAudioCrossfade:
                  "sample_rate": audio_a["sample_rate"]},)
 
 
+class CallsheetAudioOverlay:
+    """Layer a waveform over another"""
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {"required": {
+            "b_offset": ("INT", {"default": 0}),
+            "a_audio": ("AUDIO",),
+            "b_audio": ("AUDIO",),
+        }}
+
+    RETURN_TYPES = ("AUDIO",)
+    FUNCTION = "overlay"
+    CATEGORY = "callsheet"
+
+    def overlay(self, b_offset, a_audio, b_audio):
+        if a_audio is None and b_audio is None:
+            raise ValueError("CallsheetAudioOverlay: both audio inputs "
+                             "are None — nothing to output")
+        if not b_audio:
+            return (a_audio,)
+
+        wa = a_audio["waveform"]
+        a_len = wa.shape[-1]
+        wb = b_audio["waveform"]
+        b_len = wb.shape[-1]
+
+        if (b_len + b_offset) <= 0 or b_offset >= a_len:  # Out of bounds
+            return (a_audio,)
+
+        if a_audio["sample_rate"] != b_audio["sample_rate"]:
+            raise ValueError(
+                f"CallsheetAudioOverlay: sample rates differ "
+                f"({a_audio['sample_rate']} vs {b_audio['sample_rate']}) — use "
+                f"Callsheet Audio Resample first")
+
+        if wa.shape[0] != wb.shape[0] or wa.shape[1] != wb.shape[1]:
+            raise ValueError(
+                f"CallsheetAudioOverlay: batch/channel shapes differ "
+                f"({tuple(wa.shape[:2])} vs {tuple(wb.shape[:2])})")
+
+        # Clone a_audio so we don't modify the input tensor
+        result = wa.clone()
+
+        # Calculate clipped overlap region within a_audio bounds
+        a_start = max(0, b_offset)                    # Start in a (clamped to 0)
+        a_end = min(a_len, b_offset + b_len)          # End in a (clamped to a_len)
+
+        # Calculate corresponding slice in b_audio
+        b_start = max(0, -b_offset)                   # Skip beginning of b if b_offset < 0
+        overlap_len = a_end - a_start
+        b_end = b_start + overlap_len                 # Will be <= b_len
+
+        # Replace the overlapping portion of a with b
+        result[..., a_start:a_end] = wb[..., b_start:b_end]
+
+        return ({"waveform": result, "sample_rate": a_audio["sample_rate"]},)
+
+
 class CallsheetAudioResample:
     """Resamples a waveform to target_sample_rate using torchaudio's
     band-limited sinc interpolation, with optional channel conversion
@@ -189,6 +248,8 @@ class CallsheetAudioResample:
     CATEGORY = "callsheet"
 
     def resample(self, audio, target_sample_rate, channels):
+        if not audio:
+            return (audio,)
         wf = audio["waveform"]                    # [B, C, T]
         sr = audio["sample_rate"]
         if sr != target_sample_rate:
@@ -216,6 +277,8 @@ class CallsheetAudioInfo:
     CATEGORY = "callsheet"
 
     def info(self, audio):
+        if audio is None:
+            return (0, 0, 0, 0)
         wf = audio["waveform"]
         sr = audio["sample_rate"]
         return (wf.shape[-1], sr, wf.shape[1], wf.shape[-1] / sr)
@@ -786,9 +849,6 @@ class CallsheetDialogueHelperC:
             speed_a, speed_b,
             max_length_per_prompt, dialogue, solo, pad_length)
         return (prompt,)
-
-
-
 
 
 class CallsheetLoRATagLoader(LoraLoader):
