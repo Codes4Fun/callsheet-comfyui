@@ -318,7 +318,7 @@ def collect_candidates(items, selections, focus):
         for seed in item["seeds"]:
             key = variation_key(item, seed, ref_keys, aref_keys,
                                 cont_key, vref_pairs, cv_pair,
-                                tgt_key, tv_pair)
+                                tgt_key, tv_pair, atrack_key)
             if key not in VARIATION_STORE:
                 pending.append((seed, key))
         if not pending:
