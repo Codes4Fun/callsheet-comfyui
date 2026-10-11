@@ -144,3 +144,42 @@ class CallsheetInjectAudio:
                            "subfolder": STORE_SUBFOLDER, "type": "output"})
             runstate.report(1, 0)
         return ([key],)
+
+
+class CallsheetImageInput:
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {"required": {
+            "image": ("IMAGE",),
+            "label": ("STRING", {"default": ""}),
+        }}
+
+    RETURN_TYPES = ("CS_INPUT",)
+    RETURN_NAMES = ("input",)
+    FUNCTION = "inject"
+    CATEGORY = "callsheet"
+
+    def inject(self, image, label):
+        arr = np.clip(image[0].cpu().numpy() * 255.0, 0, 255).astype(np.uint8)
+        key = hashlib.sha1(b"input" + arr.tobytes()).hexdigest()[:16]
+        return (("image", label, key, image),)
+
+
+class CallsheetAudioInput:
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {"required": {
+            "audio": ("AUDIO",),
+            "label": ("STRING", {"default": ""}),
+        }}
+
+    RETURN_TYPES = ("CS_INPUT",)
+    RETURN_NAMES = ("input",)
+    FUNCTION = "inject"
+    CATEGORY = "callsheet"
+
+    def inject(self, audio, label):
+        wf = audio["waveform"].cpu().numpy()
+        key = hashlib.sha1(b"inpaud" + wf.tobytes()).hexdigest()[:16]
+        return (("audio", label, key, audio),)
+

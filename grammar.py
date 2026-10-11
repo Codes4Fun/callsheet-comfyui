@@ -181,7 +181,7 @@ def _parse_single_clip(headers, key, tag, errors):
 
 
 def parse_and_validate(text, pipelines, strict, base_seed,
-                       widget_defaults, variation_requests):
+                       widget_defaults, variation_requests, inputs):
     """Strict mode requires every referenced pipeline to be declared AND
     typed; typed pipelines get property/ref-kind enforcement here. Items
     in untyped pipelines fall back to lazy validation at runtime."""
@@ -230,10 +230,12 @@ def parse_and_validate(text, pipelines, strict, base_seed,
             errors.append(f"{tag}: invalid label '{label}'")
         if label in seen_labels:
             errors.append(f"{tag}: duplicate label '{label}'")
+        if label in inputs:
+            errors.append(f"{tag}: label conflicts with input '{label}'")
         seen_labels.add(label)
 
-        injected = headers.get(
-            "source", defaults.get("source", "")).lower() == "injected"
+        source = headers.get("source", defaults.get("source", "")).lower()
+        injected = source == "injected"
         refs = [r.strip() for r in headers.get("ref", "").split(",")
                 if r.strip()]
         audio_refs = [r.strip() for r in
@@ -443,8 +445,12 @@ def parse_and_validate(text, pipelines, strict, base_seed,
 
     # ---- reference validation --------------------------------------------------
     by_label = {it["label"]: it for it in items}
+    for label in inputs:
+        by_label[label] = { "type": inputs[label][0], "injected": True }
 
     def edges(it):
+        if it["injected"]:
+            return []
         e = it["refs"] + it["audio_refs"] + [l for l, _ in it["video_refs"]]
         for k in ("continue_frame", "target_frame", "audio_track"):
             if it[k]:

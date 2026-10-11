@@ -7,7 +7,8 @@ from .flags import CallsheetFlag
 from .store_nodes import (CallsheetStoreImages, CallsheetStoreVideos,
                           CallsheetStoreAudio, CallsheetStore)
 from .inject_nodes import (CallsheetInjectImage, CallsheetInjectVideo,
-                           CallsheetInjectAudio)
+                           CallsheetInjectAudio, CallsheetImageInput,
+                           CallsheetAudioInput)
 from .embed import CallsheetEmbeddedImage
 from .collector import CallsheetCollector
 from .concat import CallsheetConcatVideos
@@ -46,6 +47,8 @@ NODE_CLASS_MAPPINGS = {
     "CallsheetInjectImage": CallsheetInjectImage,
     "CallsheetInjectVideo": CallsheetInjectVideo,
     "CallsheetInjectAudio": CallsheetInjectAudio,
+    "CallsheetImageInput": CallsheetImageInput,
+    "CallsheetAudioInput": CallsheetAudioInput,
     "CallsheetEmbeddedImage": CallsheetEmbeddedImage,
     "CallsheetCollector": CallsheetCollector,
     "CallsheetConcatVideos": CallsheetConcatVideos,
@@ -86,6 +89,8 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "CallsheetInjectImage": "Callsheet Inject Image",
     "CallsheetInjectVideo": "Callsheet Inject Video",
     "CallsheetInjectAudio": "Callsheet Inject Audio",
+    "CallsheetImageInput": "Callsheet Image Input",
+    "CallsheetAudioInput": "Callsheet Audio Input",
     "CallsheetEmbeddedImage": "Callsheet Embedded Image",
     "CallsheetCollector": "Callsheet Collector",
     "CallsheetConcatVideos": "Callsheet Concat Videos",

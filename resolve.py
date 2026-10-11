@@ -5,7 +5,7 @@ from .trimspec import parse_spec, resolve_window
 from .media import video_frame_info
 from . import runstate
 
-def build_resolver(items, selections):
+def build_resolver(items, selections, inputs):
     """Returns resolve(label) -> store key or None.
 
     Explicit selections are honored whenever they are a stored variation
@@ -18,6 +18,8 @@ def build_resolver(items, selections):
     def resolve(label):
         if label in memo:
             return memo[label]
+        if label in inputs:
+            return inputs[label][2]
         memo[label] = None   # re-entry guard; graph is validated acyclic
         item = by_label.get(label)
         if item is None:
@@ -107,9 +109,9 @@ def focus_closure(items, focus):
     return closure
 
 
-def collect_candidates(items, selections, focus):
+def collect_candidates(items, selections, focus, inputs={}):
     closure = focus_closure(items, focus) if focus else None
-    resolver = build_resolver(items, selections)
+    resolver = build_resolver(items, selections, inputs)
     deferred = {}
     passno = runstate.current_pass()
 
@@ -202,33 +204,67 @@ def collect_candidates(items, selections, focus):
         # ---- kind checks: resolved-but-wrong is a HARD error ---------
         item_errors = []
         for d, k in zip(item["refs"], ref_keys):
+            if d in inputs:
+                continue
             if VARIATION_STORE[k].get("kind", "image") != "image":
                 item_errors.append(
                     f"'{item['label']}': ref '{d}' resolved to a "
                     f"{VARIATION_STORE[k].get('kind')} variation — "
                     f"refs must be images")
         for d, k in zip(item["audio_refs"], aref_keys):
+            if d in inputs:
+                continue
             if not VARIATION_STORE[k].get("has_audio"):
                 item_errors.append(
                     f"'{item['label']}': audio_ref '{d}' resolved to "
                     f"a variation with no audio track")
-        cont_rec = VARIATION_STORE.get(cont_key) if cont_key else None
-        if cont_rec and cont_rec.get("kind") not in ("video", "image"):
-            item_errors.append(
-                f"'{item['label']}': continue_frame '{cont_label}' "
-                f"resolved to a {cont_rec.get('kind')} variation — "
-                f"must be video or image")
-        tgt_rec = VARIATION_STORE.get(tgt_key) if tgt_key else None
-        if tgt_rec and tgt_rec.get("kind") not in ("video", "image"):
-            item_errors.append(
-                f"'{item['label']}': target_frame '{tgt_label}' "
-                f"resolved to a {tgt_rec.get('kind')} variation — "
-                f"must be video or image")
-        atrack_rec = VARIATION_STORE.get(atrack_key) if atrack_key else None
-        if atrack_rec and not atrack_rec.get("has_audio"):
-            item_errors.append(
-                f"'{item['label']}': audio_track resolved to "
-                f"a variation with no audio track")
+        if cont_key:
+            if cont_key in inputs:
+                cont_rec = {
+                    "filename":"",
+                    "kind": inputs[cont_key][0],
+                    "label":inputs[cont_key][1],
+                }
+            else:
+                cont_rec = VARIATION_STORE.get(cont_key)
+            if cont_rec and cont_rec.get("kind") not in ("video", "image"):
+                item_errors.append(
+                    f"'{item['label']}': continue_frame '{cont_label}' "
+                    f"resolved to a {cont_rec.get('kind')} variation — "
+                    f"must be video or image")
+        else:
+            cont_rec = None
+        if tgt_key:
+            if tgt_key in inputs:
+                tgt_rec = {
+                    "filename":"",
+                    "kind": inputs[tgt_key][0],
+                    "label":inputs[tgt_key][1],
+                }
+            else:
+                tgt_rec = VARIATION_STORE.get(tgt_key)
+            if tgt_rec and tgt_rec.get("kind") not in ("video", "image"):
+                item_errors.append(
+                    f"'{item['label']}': target_frame '{tgt_label}' "
+                    f"resolved to a {tgt_rec.get('kind')} variation — "
+                    f"must be video or image")
+        else:
+            tgt_rec = None
+        if atrack_label:
+            if atrack_label in inputs:
+                atrack_rec = {
+                    "filename":"",
+                    "kind": inputs[atrack_label][0],
+                    "label":inputs[atrack_label][1],
+                }
+            else:
+                atrack_rec = VARIATION_STORE.get(atrack_key)
+            if atrack_rec and not atrack_rec.get("has_audio"):
+                item_errors.append(
+                    f"'{item['label']}': audio_track resolved to "
+                    f"a variation with no audio track")
+                atrack_rec = None
+        else:
             atrack_rec = None
 
         vref_windows = []

@@ -20,7 +20,7 @@ def _load_json(s, name, expect):
                             f"{'list' if expect is list else 'object'}")
 
 
-def _pipeline_build_jobs(candidates):
+def _pipeline_build_jobs(candidates, inputs):
     # local cache
     media_images = {}        # load_store_image
     media_last_frames = {}   # load_video_last_frame
@@ -35,7 +35,11 @@ def _pipeline_build_jobs(candidates):
         cont_rec = c["cont_rec"]
         if cont_rec is not None:
             filename = cont_rec["filename"]
-            if cont_rec.get("kind") == "video":
+            if not filename:
+                cont_frame = inputs[cont_rec["label"]]
+                if not cont_frame:
+                    raise ValueError(f"continue_frame {cont_rec["label"]} not in inputs")
+            elif cont_rec.get("kind") == "video":
                 if filename in media_last_frames:
                     cont_frame = media_last_frames[filename]
                 else:
@@ -54,7 +58,11 @@ def _pipeline_build_jobs(candidates):
         tgt_rec = c["tgt_rec"]
         if tgt_rec is not None:
             filename = tgt_rec["filename"]
-            if tgt_rec.get("kind") == "video":
+            if not filename:
+                tgt_frame = inputs[tgt_rec["label"]]
+                if not tgt_frame:
+                    raise ValueError(f"target_frame {tgt_rec["label"]} not in inputs")
+            elif tgt_rec.get("kind") == "video":
                 if filename in media_first_frames:
                     tgt_frame = media_first_frames[filename]
                 else:
@@ -72,27 +80,33 @@ def _pipeline_build_jobs(candidates):
 
         ref_imgs = []
         for k in c["ref_keys"]:
-            rec = VARIATION_STORE[k]
-            filename = rec["filename"]
-            if filename in media_images:
-                ref_imgs.append(media_images[filename])
+            if k in inputs:
+                ref_imgs.append(inputs[k][3])
             else:
-                img = load_store_image(rec)
-                ref_imgs.append(img)
-                media_images[filename] = img
+                rec = VARIATION_STORE[k]
+                filename = rec["filename"]
+                if filename in media_images:
+                    ref_imgs.append(media_images[filename])
+                else:
+                    img = load_store_image(rec)
+                    ref_imgs.append(img)
+                    media_images[filename] = img
         while len(ref_imgs) < MAX_REFS:
             ref_imgs.append(None)    # loud failure if consumed
 
         aref_audio = []
         for k in c["aref_keys"]:
-            rec = VARIATION_STORE[k]
-            filename = rec["filename"]
-            if filename in media_audio:
-                aref_audio.append(media_audio[filename])
+            if k in inputs:
+                aref_audio.append(inputs[k][3])
             else:
-                audio = load_store_audio(rec)
-                aref_audio.append(audio)
-                media_audio[filename] = audio
+                rec = VARIATION_STORE[k]
+                filename = rec["filename"]
+                if filename in media_audio:
+                    aref_audio.append(media_audio[filename])
+                else:
+                    audio = load_store_audio(rec)
+                    aref_audio.append(audio)
+                    media_audio[filename] = audio
         while len(aref_audio) < MAX_AUDIO_REFS:
             aref_audio.append(None)
 
@@ -134,7 +148,11 @@ def _pipeline_build_jobs(candidates):
         atrack_rec = c["atrack_rec"]
         if atrack_rec is not None:
             filename = atrack_rec["filename"]
-            if filename in media_audio:
+            if not filename:
+                atrack = inputs[atrack_rec["label"]]
+                if not atrack:
+                    raise ValueError(f"audio_track {atrack_rec["label"]} not in inputs")
+            elif filename in media_audio:
                 atrack = media_audio[filename]
             else:
                 audio = load_store_audio(atrack_rec)
@@ -179,13 +197,13 @@ def _pipeline_build_jobs(candidates):
 
 
 def _build_pipeline_candidates(pipelines, items, selected, focus_list,
-                               max_jobs_per_pass):
+                               max_jobs_per_pass, inputs={}):
     # ------------------------------------------------------------------
     # Phase 1: resolve, validate, collect candidates (no media decode)
     # ------------------------------------------------------------------
 
     all_candidates, pipelines_on_hold, pipelines_deferred, hard_errors = (
-        collect_candidates(items, selected, focus_list))
+        collect_candidates(items, selected, focus_list, inputs))
 
     if hard_errors:
         # raised BEFORE report(): to never trigger a requeue
@@ -299,7 +317,8 @@ def _build_pipeline_candidates(pipelines, items, selected, focus_list,
         for c in candidates:
             print(f"[Callsheet pass {passno}] "
                     f"'{c['item']['label']}': candidate {len(c["pending"])} job(s)")
-        jobs = _pipeline_build_jobs(candidates)
+        # collect media
+        jobs = _pipeline_build_jobs(candidates, inputs)
         pipeline["candidates"] = candidates
         pipeline["jobs"] = jobs
         pipeline["deferred"] = deferred
@@ -435,6 +454,8 @@ class CallsheetTextInputB:
     one asset's variations without regenerating its dependents. Clear it
     (or use the collector's focus controls) to resume full generation."""
 
+    OUTPUT_NODE = True
+
     def __init__(self):
         self._last_text = None
         self._last_pipeline_specs = None
@@ -468,6 +489,9 @@ class CallsheetTextInputB:
                                              "advanced": True}),
             "state": ("STRING", {"default": "", "multiline": True,
                                  "advanced": True}),
+            "cs_inputs": ("STRING", {"default":"", "advanced": True})
+        }, "optional": {
+            "input_0": ("CS_INPUT",),
         }}
 
     RETURN_TYPES = ("CS_PARSED",)
@@ -481,8 +505,29 @@ class CallsheetTextInputB:
 
     def parse(self, text, strict, auto_continue, max_passes, max_jobs_per_pass,
               base_seed, fallback_width, fallback_height, fallback_fps,
-              pipeline_specs, state):
+              pipeline_specs, state, cs_inputs, **kwargs):
         runstate.configure(auto_continue, max_passes)
+
+        ui_inputs = []
+        inputs = {}
+        image_index = 0
+        audio_index = 0
+        i = 0
+        while f"input_{i}" in kwargs:
+            itype, label, key, data = kwargs[f"input_{i}"]
+            if not label:
+                if itype == "image":
+                    label = f"image_{image_index}"
+                    image_index += 1
+                elif itype == "audio":
+                    label = f"audio_{audio_index}"
+                    audio_index += 1
+                else:
+                    raise ValueError(f"unknown input type {itype}")
+            inputs[label] = (itype, label, key, data)
+            inputs[key] = (itype, label, key, data)
+            ui_inputs.append([itype,label,key])
+            i += 1
 
         # parse items or use cached items
         is_text_new = self._last_text != text
@@ -512,7 +557,7 @@ class CallsheetTextInputB:
                 text, pipelines, strict, base_seed,
                 {"width": str(fallback_width), "height": str(fallback_height),
                 "fps": str(fallback_fps)},
-                wf_state["variation_requests"])
+                wf_state["variation_requests"], inputs)
             self._last_text = text
             self._last_state = state
             self._last_items = items
@@ -530,7 +575,9 @@ class CallsheetTextInputB:
         selected = wf_state["selections"]
 
         _build_pipeline_candidates(pipelines, items, selected, focus_list,
-                                   max_jobs_per_pass)
+                                   max_jobs_per_pass, inputs)
 
-        return ({"items": items, "selections": selected,
-                 "focus": focus_list, "pipelines": pipelines},)
+        result = ({"items": items, "selections": selected, "focus": focus_list,
+                  "pipelines": pipelines, "inputs": inputs},)
+        return {"ui": {"cs_inputs": ui_inputs}, "result": result}
+

@@ -61,6 +61,7 @@ async function refreshAssets(node, init) {
     fallback_height: val("fallback_height", 1024),
     fallback_fps: val("fallback_fps", 24),
     state: val("state",'{"variation_requests":{},"selections":{},"focus":[]}'),
+    inputs: val("cs_inputs", '[]'),
     pipeline_filter: getWidget(node, "pipeline_filter")?.value ?? "",
   };
   try {
@@ -395,7 +396,7 @@ function buildUI(node) {
         if (sel.poster)
           big.poster = viewUrl({ ...sel, filename: sel.poster });
         big.addEventListener('loadedmetadata', function () {
-          info.textContent = `${big.videoWidth} x ${big.videoHeight}`;
+          info.textContent = `${big.videoWidth} x ${big.videoHeight} ${big.duration}`;
         });
       } else if (sel.kind === "audio") {
         big = document.createElement("div");

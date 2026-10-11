@@ -1,10 +1,10 @@
 from .store import VARIATION_STORE, variation_key, load_store_image
 from .resolve import build_resolver
 
-def build_assets(items, selections, wanted):
+def build_assets(items, selections, wanted, inputs):
     """Shared by the collector node and the /callsheet/assets route:
     builds the browsable asset list for a set of parsed items."""
-    resolver = build_resolver(items, selections)
+    resolver = build_resolver(items, selections, inputs)
     assets = []
     for item in sorted(items, key=lambda i: i["index"]):
         if wanted and item["pipeline"] not in wanted:
@@ -91,11 +91,11 @@ class CallsheetCollector:
 
     def collect(self, parsed, pipeline_filter, **kwargs):
         parsed = parsed[0]
-        items, selections = parsed["items"], parsed["selections"]
+        items, selections, inputs = parsed["items"], parsed["selections"], parsed["inputs"]
         wanted = {p.strip() for p in pipeline_filter[0].split(",")
                   if p.strip()}
 
-        assets = build_assets(items, selections, wanted)
+        assets = build_assets(items, selections, wanted, inputs)
 
         out_images, out_labels = [], []
         for a in assets:
@@ -106,5 +106,5 @@ class CallsheetCollector:
                 out_images.append(load_store_image(rec))
                 out_labels.append(a["label"])
 
-        return {"ui": {"cs_assets": assets},
-                "result": (out_images, out_labels)}
+        return {"ui": {"cs_assets": assets}, "result": (out_images, out_labels)}
+

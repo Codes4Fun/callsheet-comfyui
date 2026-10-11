@@ -147,10 +147,10 @@ class CallsheetConcatVideos:
         prompt = _first(prompt)
         extra_pnginfo = _first(extra_pnginfo)
 
-        items, selections = parsed["items"], parsed["selections"]
+        items, selections, inputs = parsed["items"], parsed["selections"], parsed["inputs"]
         focus = parsed.get("focus") or []
         by_label = {it["label"]: it for it in items}
-        resolver = build_resolver(items, selections)
+        resolver = build_resolver(items, selections, inputs)
 
         if not labels:
             return self._notice("no labels specified")

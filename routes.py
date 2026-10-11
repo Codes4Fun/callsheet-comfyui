@@ -40,12 +40,18 @@ async def cs_assets(request):
     try:
         pipeline_specs = json.loads(data.get("pipeline_specs") or "{}")
         state = json.loads(data.get("state") or '{}')
+        shared_inputs = json.loads(data.get("inputs") or '[]')
         requests_ = state["variation_requests"] if "variation_requests" in state else {}
         selections = state["selections"] if "selections" in state else {}
         if not isinstance(requests_, dict) or not isinstance(
                 selections, dict):
             raise ValueError("variation_requests/selections must be "
                              "JSON objects")
+        inputs = {}
+        for inp in shared_inputs:
+            _, label, key = inp
+            inputs[label] = inp
+            inputs[key] = inp
         items = parse_and_validate(
             data.get("text", ""), pipeline_specs,
             bool(data.get("strict")),
@@ -53,11 +59,11 @@ async def cs_assets(request):
             {"width": str(data.get("fallback_width") or 1024),
              "height": str(data.get("fallback_height") or 1024),
              "fps": str(data.get("fallback_fps") or 24)},
-            requests_)
+            requests_, inputs)
     except (ValueError, json.JSONDecodeError) as e:
         return web.json_response({"error": str(e)})
     wanted = {p.strip()
               for p in (data.get("pipeline_filter") or "").split(",")
               if p.strip()}
     return web.json_response(
-        {"assets": build_assets(items, selections, wanted)})
+        {"assets": build_assets(items, selections, wanted, inputs)})
