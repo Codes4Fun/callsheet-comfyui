@@ -1,0 +1,49 @@
+import { app } from "/scripts/app.js";
+import { getWidget } from "./common.js";
+
+app.registerExtension({
+  name: "callsheet.audio",
+
+  async nodeCreated(node) {
+    // Only target your specific node
+    if (node.constructor.type !== "CallsheetAudioFX") {
+      return;
+    }
+   
+    const updateInputs = () => {
+      // ADD: Create new slot when last one is connected
+      const lastInput = node.inputs
+        .slice()
+        .reverse()
+        .find(i => i.name.startsWith("audio_"));
+
+      if (lastInput && lastInput.link !== null) {
+        const nextIndex = parseInt(lastInput.name.split("_")[1]) + 1;
+        node.addInput(`audio_${nextIndex}`, "*");
+      }
+
+      // REMOVE: Clean up empty trailing slots
+      const inputSlots = node.inputs.filter(i => i.name.startsWith("audio_"));
+      if (inputSlots.length > 1) {
+        const lastSlot = inputSlots[inputSlots.length - 1];
+        const secondLastSlot = inputSlots[inputSlots.length - 2];
+        if (lastSlot.link === null && secondLastSlot.link === null) {
+          node.removeInput(node.inputs.indexOf(lastSlot));
+        }
+      }
+    };
+
+    // Hook into connection changes
+    const originalOnConnectionsChange = node.onConnectionsChange;
+    node.onConnectionsChange = function(type, index, connected, link_info) {
+      originalOnConnectionsChange?.apply(this, arguments);
+      updateInputs();
+    };
+
+    // Initial cleanup
+    updateInputs();
+  },
+});
+
+
+
