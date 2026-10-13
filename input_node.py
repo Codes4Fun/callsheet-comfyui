@@ -36,8 +36,8 @@ def _pipeline_build_jobs(candidates, inputs):
         if cont_rec is not None:
             filename = cont_rec["filename"]
             if not filename:
-                cont_frame = inputs[cont_rec["label"]]
-                if not cont_frame:
+                cont_frame = inputs[cont_rec["label"]][3]
+                if cont_frame is None:
                     raise ValueError(f"continue_frame {cont_rec["label"]} not in inputs")
             elif cont_rec.get("kind") == "video":
                 if filename in media_last_frames:
@@ -59,8 +59,8 @@ def _pipeline_build_jobs(candidates, inputs):
         if tgt_rec is not None:
             filename = tgt_rec["filename"]
             if not filename:
-                tgt_frame = inputs[tgt_rec["label"]]
-                if not tgt_frame:
+                tgt_frame = inputs[tgt_rec["label"]][3]
+                if tgt_frame is None:
                     raise ValueError(f"target_frame {tgt_rec["label"]} not in inputs")
             elif tgt_rec.get("kind") == "video":
                 if filename in media_first_frames:
